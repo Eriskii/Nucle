@@ -55,6 +55,7 @@
 	import { hasDial, type Weapon } from '#lib/game/weapons.ts';
 	import Debrief from '#lib/ui/debrief/Debrief.svelte';
 	import { BUTTON_LABEL } from '#lib/ui/debrief/text.ts';
+	import Tasking from '#lib/ui/Tasking.svelte';
 	import Nixie from '#lib/ui/Nixie.svelte';
 	import Scope from '#lib/ui/Scope.svelte';
 	import { Soundscape, type SoundEvent } from '#lib/ui/sound.ts';
@@ -431,11 +432,25 @@
 				</div>
 				<div class="switches">
 					{#if themeId === 'sage'}
-						<svg class="gun" viewBox="0 0 120 54" role="img" aria-label="Light gun in its holder">
-							<path d="M6 16h78l14 5v9l-14 3H56l-6 17H30l5-17H6z" fill="#7d8583" stroke="#23292a" stroke-width="2" />
-							<path d="M98 22h16v7H98z" fill="#23292a" />
-							<path d="M44 33l-4 9" stroke="#23292a" stroke-width="3" />
-							<circle cx="114" cy="25.500" r="2" fill="#f5f6ff" />
+						<svg class="gun" viewBox="0 0 150 76" role="img" aria-label="Light gun in its holder">
+							<defs>
+								<linearGradient id="alu" x1="0" y1="0" x2="0" y2="1">
+									<stop offset="0" stop-color="#eef0ee" />
+									<stop offset="0.45" stop-color="#b9bdbc" />
+									<stop offset="1" stop-color="#6f7473" />
+								</linearGradient>
+								<pattern id="knurl" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(-20)">
+									<rect width="3" height="3" fill="#a9adac" />
+									<path d="M0 0h3" stroke="#5a5e5d" stroke-width="1" />
+								</pattern>
+							</defs>
+							<path d="M92 56c10 18 34 18 58 10" fill="none" stroke="#17191b" stroke-width="4" />
+							<path d="M4 24h44v5H4z" fill="#8e9392" stroke="#23272a" />
+							<path d="M46 16h48c7 0 10 4 10 11v9c0 5-3 8-8 8H46z" fill="url(#alu)" stroke="#23272a" />
+							<path d="M62 44h34l6 21c1 5-2 8-6 8H74c-4 0-6-3-5-7z" fill="url(#knurl)" stroke="#23272a" />
+							<path d="M56 44l5 9h7l-2-9" fill="#8a1d12" stroke="#23272a" />
+							<circle cx="82" cy="24" r="1.8" fill="#50555a" />
+							<circle cx="85" cy="66" r="1.8" fill="#50555a" />
 						</svg>
 					{/if}
 					<span class="group-label">{L.dataSelect}</span>
@@ -444,16 +459,24 @@
 					<button class="key" class:lit={showDensity} onclick={() => (showDensity = !showDensity)}>{L.population}</button>
 					{#if themeId === 'sage'}
 						<svg class="dial" viewBox="0 0 60 60" role="img" aria-label="Telephone dial">
-							<circle cx="30" cy="30" r="28" fill="#8a918f" stroke="#23292a" stroke-width="2" />
+							<circle cx="30" cy="30" r="29" fill="#3f444a" stroke="#14171a" stroke-width="1.5" />
+							{#each Array(10) as _, i (i)}
+								{@const a = ((i * 29 - 62) * Math.PI) / 180}
+								<text x={30 + 26 * Math.cos(a)} y={30 + 26 * Math.sin(a) + 1.6} text-anchor="middle" font-size="4.6" fill="#e8eae4">{(i + 1) % 10}</text>
+							{/each}
+							<circle cx="30" cy="30" r="22.5" fill="#60666c" stroke="#23272a" />
 							{#each Array(10) as _, i (i)}
 								<circle
-									cx={30 + 19 * Math.cos(((i * 30 - 60) * Math.PI) / 180)}
-									cy={30 + 19 * Math.sin(((i * 30 - 60) * Math.PI) / 180)}
-									r="4"
-									fill="#23292a"
+									cx={30 + 17 * Math.cos(((i * 29 - 62) * Math.PI) / 180)}
+									cy={30 + 17 * Math.sin(((i * 29 - 62) * Math.PI) / 180)}
+									r="3.6"
+									fill="#23272a"
+									stroke="#868c91"
+									stroke-width="0.5"
 								/>
 							{/each}
-							<circle cx="30" cy="30" r="8" fill="#c9cdc8" />
+							<circle cx="30" cy="30" r="10" fill="#d9c21f" stroke="#23272a" />
+							<path d="M44 44l8 6" stroke="#b9bdbc" stroke-width="2.4" stroke-linecap="round" />
 						</svg>
 					{/if}
 				</div>
@@ -537,24 +560,37 @@
 				{:else}
 					<section class="rack">
 						<h2>{L.rack}</h2>
-						<div class="keys" class:dense={scenario.arsenal.length > 5}>
-							{#each scenario.arsenal as w, i (i)}
-								{@const set = placements.some((p) => p.slot === i)}
-								<button
-									class="key warhead"
-									class:lit={selected === i}
-									class:armed={set}
-									onclick={() => (selected = i)}
-									title={`${weaponName(w)}, ${weaponNote(w)}`}
-								>
-									<span class="no">{String(i + 1).padStart(2, '0')}</span>
-									<span class="legend">
-										<span class="nm">{weaponKey(w)}</span>
-										<span class="yd">{yieldText(w.maxKt)}</span>
-									</span>
-								</button>
-							{/each}
-						</div>
+						{#if themeId === 'sage'}
+							<Tasking
+								arsenal={scenario.arsenal}
+								{placements}
+								{selected}
+								nameOf={weaponKey}
+								yieldOf={(w) => yieldText(w.maxKt)}
+								onselect={(slot) => (selected = slot)}
+								onturn={() => sfx('select')}
+								label={L.rack}
+							/>
+						{:else}
+							<div class="keys" class:dense={scenario.arsenal.length > 5}>
+								{#each scenario.arsenal as w, i (i)}
+									{@const set = placements.some((p) => p.slot === i)}
+									<button
+										class="key warhead"
+										class:lit={selected === i}
+										class:armed={set}
+										onclick={() => (selected = i)}
+										title={`${weaponName(w)}, ${weaponNote(w)}`}
+									>
+										<span class="no">{String(i + 1).padStart(2, '0')}</span>
+										<span class="legend">
+											<span class="nm">{weaponKey(w)}</span>
+											<span class="yd">{yieldText(w.maxKt)}</span>
+										</span>
+									</button>
+								{/each}
+							</div>
+						{/if}
 					</section>
 
 					{#if selectedWeapon}
@@ -691,25 +727,28 @@
 <style>
 	/* ---------- SAGE: textured light grey casing, grey keys, white legends, red lamps ---------- */
 	.room {
+		--wear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='640'%3E%3Cfilter id='a' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.006 .009' numOctaves='3' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.6 0 0 0 -0.6'/%3E%3C/filter%3E%3Cfilter id='b' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.003 .5' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 3.2 0 0 0 -1.92'/%3E%3C/filter%3E%3Cfilter id='c' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.33' numOctaves='2' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 9 0 0 0 -6.5'/%3E%3C/filter%3E%3Crect width='640' height='640' filter='url(%23a)' opacity='0.06'/%3E%3Crect width='640' height='640' filter='url(%23b)' opacity='0.035'/%3E%3Crect width='640' height='640' filter='url(%23c)' opacity='0.05'/%3E%3C/svg%3E");
 		--hammer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .3 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
 		--room-bg: radial-gradient(ellipse 90% 70% at 40% 40%, #1a3555 0%, #0c1a2c 55%, #05090f 100%);
-		--casing: var(--hammer), linear-gradient(180deg, #a4a9a6, #8b918f 70%, #7a807f);
+		--casing: var(--wear), var(--hammer), linear-gradient(180deg, #767c81, #62676d 70%, #54595e);
 		--casing-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 20px 60px rgba(0, 0, 0, 0.7);
-		--plate-bg: linear-gradient(180deg, #c5c8c4, #aeb2ae);
+		--plate-bg: var(--wear), var(--hammer), linear-gradient(180deg, #565b62, #474c52);
 		--plate-edge: 1px solid rgba(0, 0, 0, 0.45);
-		--text: #1d2122;
-		--text-dim: #33393a;
-		--text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+		--plate-text: #e8eae4;
+		--text: #e8eae4;
+		--text-dim: #c0c4c0;
+		--text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.65);
 		--section-edge: 1px solid rgba(0, 0, 0, 0.35);
-		--bezel-bg: var(--hammer), linear-gradient(145deg, #a9aeab, #858b89);
-		--bezel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.5);
+		--bezel-bg: var(--wear), var(--hammer), linear-gradient(145deg, #5a5f66, #44494f);
+		--bezel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 0 0 1px rgba(0, 0, 0, 0.4), inset 0 0 34px rgba(0, 0, 0, 0.3), 0 3px 8px rgba(0, 0, 0, 0.55);
 		--tube-face: radial-gradient(circle at 50% 48%, #24210c 0%, #15130a 62%, #070602 100%);
-		--tube-shadow: inset 0 0 40px 8px rgba(0, 0, 0, 0.7), inset 0 0 90px rgba(240, 220, 120, 0.09), 0 0 0 7px #4e5453, 0 0 0 11px #2a2f30, 0 0 0 13px #9da2a0;
+		--tube-shadow: inset 0 0 40px 8px rgba(0, 0, 0, 0.7), inset 0 0 90px rgba(240, 220, 120, 0.09), 0 0 0 7px #575c62, 0 0 0 11px #2a2e32, 0 0 0 13px #767c81;
 		--tube-glass:
-			radial-gradient(ellipse 58% 30% at 34% 16%, rgba(255, 245, 200, 0.1), transparent 70%),
+			radial-gradient(ellipse 58% 30% at 34% 16%, rgba(255, 245, 200, 0.12), transparent 70%),
 			radial-gradient(circle at 50% 50%, transparent 74%, rgba(0, 0, 0, 0.38) 100%),
+			radial-gradient(circle at 50% 50%, rgba(240, 205, 60, 0.02), rgba(240, 205, 60, 0.05)),
 			repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 3px);
-		--readout: #1d2122;
+		--readout: #e8eae4;
 		--readout-glow: none;
 		--num: #fff0a0;
 		--num-glow: 0 0 6px rgba(255, 235, 140, 0.7);
@@ -718,25 +757,28 @@
 		--tty: 'Overpass Mono', 'Courier New', monospace;
 		font-synthesis: none;
 		--panel-hardware: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(25 5.5 5.5)'/%3E%3C/svg%3E") 4px 4px no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(-40 5.5 5.5)'/%3E%3C/svg%3E") calc(100% - 4px) 4px no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(80 5.5 5.5)'/%3E%3C/svg%3E") 4px calc(100% - 4px) no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(5 5.5 5.5)'/%3E%3C/svg%3E") calc(100% - 4px) calc(100% - 4px) no-repeat;
-		--panel-face: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(0, 0, 0, 0.09));
-		--panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 3px 5px rgba(0, 0, 0, 0.45);
-		--card-face: linear-gradient(180deg, #efe8d0, #e0d7ba);
-		--card-ink: #24231e;
-		--card-frame: 0 0 0 2px #4b5150, 0 0 0 3px #1c2021, 0 2px 3px 3px rgba(0, 0, 0, 0.35), inset 0 2px 3px rgba(0, 0, 0, 0.35);
+		--panel-face: var(--wear), var(--hammer), linear-gradient(180deg, #575c63, #474c52);
+		--panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 0 rgba(0, 0, 0, 0.45), inset 0 0 22px rgba(0, 0, 0, 0.26), 0 3px 6px rgba(0, 0, 0, 0.5);
+		--card-face: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px), radial-gradient(ellipse at 50% 45%, #25210d, #100e05 85%);
+		--card-ink: #efe189;
+		--card-font: var(--crt);
+		--card-glow: 0 0 5px rgba(255, 235, 140, 0.55);
+		--card-radius: 7px;
+		--card-frame: inset 0 2px 7px #000, 0 0 0 3px #30353a, 0 0 0 4px #15181b, 0 1px 0 4px rgba(255, 255, 255, 0.16);
 		--well-face: #17150a;
 		--well-ink: #fff0a0;
 		--well-shadow: inset 0 2px 5px #000, 0 0 0 2px #4e5453, 0 1px 0 2px rgba(255, 255, 255, 0.25);
-		--gauge-case: #868d8a;
+		--gauge-case: #5b6066;
 		--gauge-rim: #1d2122;
 		--gauge-face: #e8e1c8;
 		--gauge-ink: #24231e;
 		--gauge-needle: #b52c10;
 		--gauge-hub: #30363a;
 		--gauge-drop: rgba(0, 0, 0, 0.55);
-		--gauge-plate-ink: #111415;
-		--key-face: linear-gradient(180deg, #7d8583, #5f6665);
+		--gauge-plate-ink: #eceee8;
+		--key-face: var(--hammer), linear-gradient(180deg, #555a61, #3c4046);
 		--key-text: #fff;
-		--key-border: 1px solid #23292a;
+		--key-border: 1px solid #111316;
 		--key-radius: 2px;
 		--key-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.38), inset 2px 0 0 rgba(255, 255, 255, 0.1), inset -2px 0 0 rgba(0, 0, 0, 0.18), inset 0 -3px 0 rgba(0, 0, 0, 0.3), 0 0 0 2px #2f3536, 0 5px 0 1px #1c2021, 0 8px 9px rgba(0, 0, 0, 0.55);
 		--key-pressed: inset 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 2px #2f3536, 0 1px 0 1px #1c2021;
@@ -775,15 +817,16 @@
 	/* ---------- PVO: hammer-finish grey-green, nixie tubes, an indicator board ---------- */
 	.room[data-theme='pvo'] {
 		--room-bg: radial-gradient(ellipse 90% 70% at 40% 40%, #20241c 0%, #12140f 60%, #070806 100%);
-		--casing: var(--hammer), var(--hammer), linear-gradient(180deg, #5d7470, #4b5f5c 70%, #3f514e);
+		--casing: var(--wear), var(--hammer), var(--hammer), linear-gradient(180deg, #5d7470, #4b5f5c 70%, #3f514e);
 		--casing-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.45), 0 20px 60px rgba(0, 0, 0, 0.8);
-		--plate-bg: linear-gradient(180deg, #c8c2a8, #aba58c);
+		--plate-bg: var(--wear), linear-gradient(180deg, #c8c2a8, #aba58c);
+		--plate-text: #1d2122;
 		--text: #eef0e0;
 		--text-dim: #cfd4bf;
 		--text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.6);
 		--section-edge: 1px solid rgba(0, 0, 0, 0.5);
-		--bezel-bg: var(--hammer), var(--hammer), linear-gradient(145deg, #546a66, #38494a);
-		--bezel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.6);
+		--bezel-bg: var(--wear), var(--hammer), var(--hammer), linear-gradient(145deg, #546a66, #38494a);
+		--bezel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.5), inset 0 0 34px rgba(0, 0, 0, 0.3), 0 3px 8px rgba(0, 0, 0, 0.6);
 		--tube-face: radial-gradient(circle at 50% 48%, #0f2410 0%, #081508 62%, #020602 100%);
 		--tube-shadow: inset 0 0 40px 10px rgba(0, 0, 0, 0.78), inset 0 0 90px rgba(140, 240, 90, 0.08), 0 0 0 9px #171a17, 0 0 0 11px #3f4a44;
 		--tube-glass:
@@ -794,11 +837,14 @@
 		--engraved: 'Open GOST Type B', 'Arial Narrow', sans-serif;
 		--tty: 'PT Mono', 'Courier New', monospace;
 		--panel-hardware: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(25 5.5 5.5)'/%3E%3C/svg%3E") 4px 4px no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(-40 5.5 5.5)'/%3E%3C/svg%3E") calc(100% - 4px) 4px no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(80 5.5 5.5)'/%3E%3C/svg%3E") 4px calc(100% - 4px) no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(5 5.5 5.5)'/%3E%3C/svg%3E") calc(100% - 4px) calc(100% - 4px) no-repeat;
-		--panel-face: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.14));
-		--panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.5), 0 3px 6px rgba(0, 0, 0, 0.6);
-		--card-face: linear-gradient(180deg, #e6dfc6, #d4cbab);
-		--card-ink: #24231e;
-		--card-frame: 0 0 0 2px #171917, 0 0 0 3px #000, 0 2px 3px 3px rgba(0, 0, 0, 0.5), inset 0 2px 3px rgba(0, 0, 0, 0.4);
+		--panel-face: var(--wear), var(--hammer), linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.14));
+		--panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.5), inset 0 0 22px rgba(0, 0, 0, 0.28), 0 3px 6px rgba(0, 0, 0, 0.6);
+		--card-face: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.2) 0 1px, transparent 1px 3px), #070a05;
+		--card-ink: #ffb066;
+		--card-font: var(--crt);
+		--card-glow: 0 0 5px rgba(255, 150, 70, 0.55);
+		--card-radius: 2px;
+		--card-frame: inset 0 2px 6px #000, 0 0 0 2px #171917, 0 0 0 3px #000, 0 1px 0 3px rgba(255, 255, 255, 0.13);
 		--well-face: #050b05;
 		--well-ink: #ffb066;
 		--well-shadow: inset 0 2px 5px #000, 0 0 0 2px #171917, 0 1px 0 2px rgba(255, 255, 255, 0.14);
@@ -810,7 +856,7 @@
 		--gauge-hub: #30302c;
 		--gauge-drop: rgba(0, 0, 0, 0.75);
 		--gauge-plate-ink: #d9d6bf;
-		--key-face: linear-gradient(180deg, #30302c, #141412);
+		--key-face: var(--hammer), linear-gradient(180deg, #30302c, #141412);
 		--key-text: #f2f0dd;
 		--key-border: 1px solid #000;
 		--key-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), inset 2px 0 0 rgba(255, 255, 255, 0.06), inset -2px 0 0 rgba(0, 0, 0, 0.4), inset 0 -3px 0 rgba(0, 0, 0, 0.5), 0 0 0 2px #07090a, 0 5px 0 1px #030303, 0 8px 9px rgba(0, 0, 0, 0.7);
@@ -846,13 +892,14 @@
 		--room-bg: linear-gradient(115deg, #2c3a30, #1f2a23 60%, #161e19);
 		--casing: none;
 		--casing-shadow: none;
-		--plate-bg: var(--sheet), #d9c48f;
+		--plate-bg: var(--wear), var(--sheet), #d9c48f;
 		--plate-edge: 1px solid #93794a;
+		--plate-text: #1d2122;
 		--text: #2b261c;
 		--text-dim: #4a4233;
 		--text-shadow: none;
 		--section-edge: 1px solid #b7ab8a;
-		--bezel-bg: var(--sheet), #ece3c9;
+		--bezel-bg: var(--fold), var(--wear), var(--sheet), #ece3c9;
 		--bezel-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 30px rgba(0, 0, 0, 0.55);
 		--tube-face:
 			linear-gradient(90deg, transparent 49.8%, rgba(90, 70, 40, 0.13) 50%, transparent 50.2%),
@@ -866,11 +913,16 @@
 		--crt: 'Architects Daughter', cursive;
 		--engraved: 'Architects Daughter', cursive;
 		--tty: 'Courier Prime', 'Courier New', monospace;
+		--wear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='640'%3E%3Cfilter id='a' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.006 .009' numOctaves='3' seed='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.42 0 0 0 0 0.3 0 0 0 0 0.12 1.6 0 0 0 -0.6'/%3E%3C/filter%3E%3Cfilter id='b' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.003 .5' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.35 0 0 0 0 0.27 0 0 0 0 0.15 3.2 0 0 0 -1.92'/%3E%3C/filter%3E%3Cfilter id='c' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.33' numOctaves='2' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.3 0 0 0 0 0.2 0 0 0 0 0.08 9 0 0 0 -6.5'/%3E%3C/filter%3E%3Crect width='640' height='640' filter='url(%23a)' opacity='0.08'/%3E%3Crect width='640' height='640' filter='url(%23b)' opacity='0.03'/%3E%3Crect width='640' height='640' filter='url(%23c)' opacity='0.04'/%3E%3C/svg%3E");
+		--fold: linear-gradient(90deg, transparent calc(50% - 1px), rgba(90, 70, 40, 0.2) calc(50% - 1px), rgba(255, 255, 255, 0.4) 50%, transparent calc(50% + 1px));
 		--panel-hardware: none;
-		--panel-face: none;
+		--panel-face: var(--wear);
 		--panel-shadow: none;
 		--card-face: none;
 		--card-ink: #2b261c;
+		--card-font: var(--tty);
+		--card-glow: none;
+		--card-radius: 0;
 		--card-frame: none;
 		--well-face: none;
 		--well-ink: #2b261c;
@@ -960,7 +1012,7 @@
 		border: var(--plate-edge);
 		border-radius: 3px;
 		background: var(--plate-bg);
-		color: #1d2122;
+		color: var(--plate-text);
 		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 	}
 	.title {
@@ -1085,21 +1137,33 @@
 	.switches {
 		position: relative;
 		width: 100%;
+		container-type: inline-size;
+	}
+	/* They sit at the ends of the row, and go when the keys need the room. */
+	@container (max-width: 830px) {
+		.gun {
+			display: none;
+		}
+	}
+	@container (max-width: 680px) {
+		.dial {
+			display: none;
+		}
 	}
 	.gun {
 		position: absolute;
-		left: calc(50% - 400px);
+		left: 0;
 		top: 50%;
-		width: 96px;
+		width: 126px;
 		height: auto;
 		transform: translateY(-50%);
 	}
 	.dial {
 		position: absolute;
-		left: calc(50% + 340px);
+		right: 0;
 		top: 50%;
-		width: 46px;
-		height: 46px;
+		width: 54px;
+		height: 54px;
 		transform: translateY(-50%);
 	}
 
@@ -1170,7 +1234,7 @@
 		box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
 	}
 	.roll {
-		height: clamp(140px, calc(20dvh - 14px), 420px);
+		height: clamp(140px, calc(20dvh - 22px), 420px);
 		overflow-y: auto;
 		padding: 12px 14px 16px;
 		background:
@@ -1236,13 +1300,13 @@
 		background: var(--panel-hardware), var(--panel-face);
 		box-shadow: var(--panel-shadow);
 	}
-	/* What changes per game is typed on a card slid into a holder. Engraving is only for what never changes. */
+	/* What changes per game shows on a small display, or is typed on the sheet. Engraving is only for what never changes. */
 	.card {
 		padding: 3px 9px;
-		border-radius: 1px;
+		border-radius: var(--card-radius);
 		color: var(--card-ink);
-		font-family: var(--tty);
-		text-shadow: none;
+		font-family: var(--card-font);
+		text-shadow: var(--card-glow);
 		background: var(--card-face);
 		box-shadow: var(--card-frame);
 	}
@@ -1250,7 +1314,7 @@
 	.card strong {
 		color: inherit;
 		font-family: inherit;
-		text-shadow: none;
+		text-shadow: inherit;
 	}
 	.dial-head .card {
 		flex: 1;
@@ -1268,7 +1332,7 @@
 		letter-spacing: 0.01em;
 	}
 	.dial-head .card span {
-		font-size: 12px;
+		font-size: 11px;
 		letter-spacing: 0;
 	}
 	.legend {
@@ -1292,17 +1356,6 @@
 	}
 	.legend .yd {
 		font-size: 11px;
-	}
-	/* SAGE's warhead keys take a typed insert under a clear cap, which glows when the key is lit. */
-	[data-theme='sage'] .legend {
-		color: #24231e;
-		text-shadow: none;
-		background: linear-gradient(180deg, #efe8d0, #dcd3b5);
-		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
-	}
-	[data-theme='sage'] .warhead.lit .legend {
-		color: #3a0a02;
-		background: radial-gradient(ellipse at 50% 40%, #ffe3d2, #ffb38f);
 	}
 	/* Units sit in the readout's window too, since they change with the value. */
 	.slider small {
@@ -1346,6 +1399,9 @@
 	}
 	.keys.dense .warhead {
 		height: 52px;
+	}
+	.keys.dense .legend .nm {
+		font-size: 12px;
 	}
 	.keys.dense .warhead .no {
 		position: absolute;
@@ -1732,8 +1788,9 @@
 	[data-theme='paper'] .warhead.armed::after {
 		content: '✓';
 		position: absolute;
-		top: 2px;
-		right: 5px;
+		top: 0;
+		right: 2px;
+		font-size: 10px;
 	}
 	[data-theme='paper'] .teletype {
 		padding: 0;

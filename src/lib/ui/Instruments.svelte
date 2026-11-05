@@ -50,6 +50,7 @@
 		<line x1="56" y1="66" x2="56" y2="19" />
 	</g>
 	<rect x="6" y="62" width="100" height="6" class="shade" />
+	<path d="M8 8h96v12c-30 7-66 7-96 0z" class="gloss" />
 	<circle cx="56" cy="66" r="4.5" class="hub" />
 	<text x="56" y="80" text-anchor="middle" class="plate-text">{ru ? 'СУММА МОЩНОСТИ' : 'TOTAL YIELD'}</text>
 </svg>
@@ -66,6 +67,7 @@
 		<path d="M48 76l3-28h-6z" class="tail" />
 	</g>
 	<circle cx="48" cy="48" r="4" class="hub" />
+	<path d="M16 34a34 34 0 0 1 64 0c-20-8-44-8-64 0z" class="gloss" />
 	<rect x="18" y="96" width="60" height="15" rx="2" class="well" />
 	<text x="48" y="107" text-anchor="middle" class="well-text">{fmtWind(windKmh, lang)}</text>
 </svg>
@@ -109,7 +111,7 @@
 	}
 	.needle {
 		transform-origin: 56px 66px;
-		transition: transform 620ms cubic-bezier(0.3, 1.5, 0.5, 1);
+		transition: transform 280ms ease-out;
 	}
 	.needle line {
 		stroke: var(--gauge-needle);
@@ -127,6 +129,11 @@
 		font: 7.5px var(--engraved);
 		letter-spacing: 0.09em;
 		fill: var(--gauge-plate-ink);
+	}
+	.gloss {
+		fill: #fff;
+		opacity: 0.09;
+		pointer-events: none;
 	}
 	.arrow {
 		fill: var(--gauge-needle);

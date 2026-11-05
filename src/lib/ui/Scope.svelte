@@ -1324,6 +1324,7 @@
 				onpointerleave={release}
 				onclick={(e) => keyboardClick(e, () => zoomBy(1 / ZOOM_STEP))}>−</button
 			>
+			{#if theme.id === 'sage'}<span class="expansion">EXPANSION</span>{/if}
 		</div>
 		<div class="arrows">
 			{#each arrows as a (a.area)}
@@ -1399,6 +1400,30 @@
 		height: 40px;
 		font-size: 24px;
 	}
+	/* On the real console each key has a white rule running across the panel to the tube's rim. */
+	:global([data-theme='sage']) .padkey {
+		position: relative;
+	}
+	@media (min-width: 901px) {
+		:global([data-theme='sage']) .zooms .padkey::before,
+		:global([data-theme='sage']) .arrows .padkey[style*='w']::before {
+			content: '';
+			position: absolute;
+			right: 100%;
+			top: 50%;
+			width: 90px;
+			height: 1px;
+			background: rgba(232, 234, 228, 0.7);
+			pointer-events: none;
+		}
+	}
+	.expansion {
+		font: 10px var(--engraved);
+		letter-spacing: 0.12em;
+		text-align: center;
+		color: var(--text);
+		text-shadow: var(--text-shadow);
+	}
 	.padkey:hover {
 		filter: brightness(1.12);
 	}
@@ -1421,6 +1446,7 @@
 		}
 		.zooms {
 			flex-direction: row;
+			align-items: center;
 		}
 		.pad {
 			flex-wrap: wrap;
@@ -1437,6 +1463,7 @@
 	}
 	.tube {
 		position: relative;
+		z-index: 1;
 		width: 100%;
 		aspect-ratio: 1;
 		border-radius: 50%;
