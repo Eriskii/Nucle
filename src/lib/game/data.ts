@@ -5,6 +5,8 @@ export interface Place {
 	lat: number;
 	lon: number;
 	pop: number;
+	/** Russian name, where Natural Earth has one. */
+	ru?: string;
 }
 
 export interface TheatreMeta {

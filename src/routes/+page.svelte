@@ -8,6 +8,22 @@
 	import { optimumHobM, ringsFor } from '#lib/game/effects.ts';
 	import { dayNumber, generate, theatreIdForDay } from '#lib/game/generator.ts';
 	import {
+		BOARD_RU,
+		DIFFICULTY_RU,
+		fmtWind,
+		heightParts,
+		PRECIP_RU,
+		RANK_RU,
+		THEATRE_RU,
+		UI,
+		WEAPON_KEY_RU,
+		WEAPON_NAME_RU,
+		WEAPON_NOTE_RU,
+		yieldParts,
+		type Lang
+	} from '#lib/game/i18n.ts';
+	import {
+		checksFor,
 		conditionTexts,
 		evaluate,
 		fmtScore,
@@ -26,14 +42,31 @@
 		hasSeenOrders,
 		loadHistory,
 		loadRun,
+		loadThemeId,
 		markOrdersSeen,
 		saveResult,
 		saveRun,
+		saveThemeId,
 		statsFrom,
 		type HistoryEntry
 	} from '#lib/game/storage.ts';
-	import { formatYield, hasDial, type Weapon } from '#lib/game/weapons.ts';
+	import { hasDial, type Weapon } from '#lib/game/weapons.ts';
+	import Nixie from '#lib/ui/Nixie.svelte';
 	import Scope from '#lib/ui/Scope.svelte';
+	import { THEME_ORDER, THEMES, type ThemeId } from '#lib/ui/themes.ts';
+
+	const PAPER_TERMS = {
+		console: 'TARGET PLANNING STAFF · CHART WORKSHEET',
+		rack: 'WARHEAD ALLOCATION',
+		dataSelect: 'OVERLAYS',
+		digital: 'EFFECTS TABLE, KM',
+		aim: 'MARK GROUND ZERO ON THE CHART',
+		lift: 'SIGN ORDER',
+		close: 'WITHDRAW',
+		execute: 'APPROVED',
+		disarm: 'ERASE',
+		runWargame: 'RUN WARGAME'
+	};
 
 	let scenario = $state.raw<Scenario | null>(null);
 	let data = $state.raw<TheatreData | null>(null);
@@ -42,6 +75,12 @@
 	let difficulty = $state.raw<Difficulty | null>(null);
 	let loadError = $state<string | null>(null);
 	let practice = $state(false);
+
+	let themeId = $state<ThemeId>('sage');
+	let translated = $state(false);
+	const theme = $derived(THEMES[themeId]);
+	const lang = $derived<Lang>(translated ? 'en' : theme.lang);
+	const L = $derived(themeId === 'paper' ? { ...UI.en, ...PAPER_TERMS } : UI[lang]);
 
 	let placements = $state<Placement[]>([]);
 	let selected = $state<number | null>(0);
@@ -61,26 +100,31 @@
 
 	const stats = $derived(statsFrom(history));
 	const finished = $derived(final !== null);
-	const conditions = $derived(scenario ? conditionTexts(scenario) : []);
+	const conditions = $derived(scenario ? conditionTexts(scenario, lang) : []);
 	const selectedWeapon = $derived<Weapon | null>(scenario && selected !== null ? scenario.arsenal[selected] : null);
 	const selectedPlacement = $derived(placements.find((p) => p.slot === selected) ?? null);
-	const board = $derived(
-		scenario && final ? boardFor(scenario, { value: final.value, passed: final.passed }) : []
-	);
+	const board = $derived(scenario && final ? boardFor(scenario, { value: final.value, passed: final.passed }) : []);
 	const canRun = $derived(placements.length > 0 && !finished && pendingFinal === null);
 
-	const selectedBurst = $derived(
-		scenario && selectedPlacement ? toBurst(scenario, selectedPlacement) : null
-	);
+	const selectedBurst = $derived(scenario && selectedPlacement ? toBurst(scenario, selectedPlacement) : null);
 	const selectedRings = $derived(
-		scenario && selectedBurst
-			? ringsFor(selectedBurst.weapon, selectedBurst.kt, selectedBurst.hobM, scenario.weather)
-			: null
+		scenario && selectedBurst ? ringsFor(selectedBurst.weapon, selectedBurst.kt, selectedBurst.hobM, scenario.weather) : null
 	);
+
+	const ru = $derived(lang === 'ru');
+	const theatreName = $derived(scenario ? (ru ? THEATRE_RU[scenario.theatre.id] : scenario.theatre.name) : '');
+	const weaponName = (w: Weapon) => (ru ? (WEAPON_NAME_RU[w.id] ?? w.name) : w.name);
+	const weaponKey = (w: Weapon) => (ru ? (WEAPON_KEY_RU[w.id] ?? w.id.toUpperCase()) : w.id.toUpperCase());
+	const weaponNote = (w: Weapon) => (ru ? WEAPON_NOTE_RU[w.id] : w.note);
+	const yieldText = (kt: number) => yieldParts(kt, lang).join(' ');
+	const rankText = (rating: number) => (ru ? RANK_RU[rankFor(rating)] : rankFor(rating));
+	const checksOf = (o: Outcome) => (scenario ? checksFor(scenario, o.bursts, o.tally, lang) : []);
 
 	onMount(async () => {
 		try {
 			const params = new URLSearchParams(location.search);
+			const wanted = params.get('theme') ?? loadThemeId();
+			if (wanted && wanted in THEMES) themeId = wanted as ThemeId;
 			const requested = Number(params.get('day'));
 			const today = dayNumber(new Date());
 			const day = requested >= 1 ? requested : today;
@@ -109,6 +153,12 @@
 			loadError = err instanceof Error ? err.message : String(err);
 		}
 	});
+
+	function pickTheme(id: ThemeId) {
+		themeId = id;
+		translated = false;
+		saveThemeId(id);
+	}
 
 	function persist(done = false) {
 		if (!scenario || practice) return;
@@ -175,6 +225,8 @@
 		persist();
 	}
 
+	let pendingCells: Float32Array | null = null;
+
 	function execute() {
 		if (!scenario || !sim || !canRun || !coverOpen) return;
 		const cells = new Float32Array(sim.grid.n);
@@ -186,8 +238,6 @@
 		coverOpen = false;
 		playToken++;
 	}
-
-	let pendingCells: Float32Array | null = null;
 
 	function strikePlayed() {
 		if (!pendingFinal || !scenario) return;
@@ -213,10 +263,10 @@
 		const games = '▮'.repeat(wargamesUsed) + '▯'.repeat(s.wargames - wargamesUsed);
 		const meters = Math.max(0, Math.min(10, Math.round(o.rating / 10)));
 		const bar = '█'.repeat(meters) + '░'.repeat(10 - meters);
-		const score = o.passed ? `${fmtScore(s, o.value)} ${SCORE_UNIT[s.kind]}` : 'MISSION FAILED';
+		const score = o.passed ? `${fmtScore(s, o.value)} ${SCORE_UNIT.en[s.kind]}` : 'MISSION FAILED';
 		return [
 			`NUCLE №${s.day} — ${s.theatre.name}`,
-			OBJECTIVE_TITLE[s.kind] + (difficulty ? ` · ${difficulty.label} ${difficulty.score}` : ''),
+			OBJECTIVE_TITLE.en[s.kind] + (difficulty ? ` · ${difficulty.label} ${difficulty.score}` : ''),
 			`${bar} ${o.rating}`,
 			score,
 			`WARHEADS ${used}`,
@@ -237,14 +287,28 @@
 		markOrdersSeen();
 	}
 
-	const hobLabel = (m: number) =>
-		m === 0 ? 'SURFACE' : m >= 10000 ? `${(m / 1000).toFixed(0)} KM` : `${m} M`;
-	const km = (v: number) => (v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2));
+	const km = (v: number) => {
+		const s = v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+		return ru ? s.replace('.', ',') : s;
+	};
 	const pad = (n: number) => String(n).padStart(3, '0');
 	const pct = (v: number) => `${Math.round(v * 100)}%`;
+	const wingName = (name: string) => (ru ? (BOARD_RU[name] ?? name) : name);
+	const nixies = $derived(themeId === 'pvo');
+
+	// When the report prints, bring it into view rather than leaving it below the order.
+	let roll = $state<HTMLDivElement | null>(null);
+	let reportHead = $state<HTMLParagraphElement | null>(null);
+	$effect(() => {
+		if (roll && reportHead) roll.scrollTop = reportHead.offsetTop - roll.offsetTop - 8;
+	});
 </script>
 
-<main class="room">
+{#snippet number(value: string, tubes = 0)}
+	{#if nixies}<Nixie {value} {tubes} />{:else}<b class="num">{value}</b>{/if}
+{/snippet}
+
+<main class="room" data-theme={themeId}>
 	{#if loadError}
 		<section class="status">
 			<h1>TRANSMISSION FAILURE</h1>
@@ -252,25 +316,37 @@
 		</section>
 	{:else if !scenario || !data}
 		<section class="status">
-			<h1>NUCLE</h1>
-			<p class="blink">COMPUTING DAILY EXERCISE</p>
+			<h1>{L.title}</h1>
+			<p class="blink">{L.computing}</p>
 		</section>
 	{:else}
 		<div class="console">
 			<header class="plate">
 				<div class="title">
-					<strong>NUCLE</strong>
-					<span>WEAPONS DIRECTOR CONSOLE · TYPE OA-1008/N</span>
+					<strong>{L.title}</strong>
+					<span>{L.console}</span>
 				</div>
 				<div class="serial">
-					<span>EXERCISE № {pad(scenario.day)}{practice ? ' · ARCHIVE, NOT SCORED' : ''}</span>
-					<span>{scenario.date} · {scenario.theatre.name}</span>
+					<span>{L.exercise} {pad(scenario.day)}{practice ? ` · ${L.archive}` : ''}</span>
+					<span>{scenario.date} · {theatreName}</span>
 				</div>
 				<div class="tally">
-					<span>STREAK <b>{stats.streak}</b></span>
-					<span>PLAYED <b>{stats.played}</b></span>
-					<span>BEST <b>{stats.best}</b></span>
-					<button class="key small" onclick={() => (showOrders = true)}>ORDERS</button>
+					<span>{L.streak} {@render number(`${stats.streak}`)}</span>
+					<span>{L.played} {@render number(`${stats.played}`)}</span>
+					<span>{L.best} {@render number(`${stats.best}`)}</span>
+					<button class="key small" onclick={() => (showOrders = true)}>{L.orders}</button>
+				</div>
+				<div class="selector" role="group" aria-label="Console theme">
+					{#each THEME_ORDER as id (id)}
+						<button class="key small" class:lit={themeId === id} aria-pressed={themeId === id} onclick={() => pickTheme(id)}>
+							{THEMES[id].name}
+						</button>
+					{/each}
+					{#if themeId === 'pvo'}
+						<button class="key small" class:armed={translated} aria-pressed={translated} onclick={() => (translated = !translated)}>
+							{UI.ru.translate}
+						</button>
+					{/if}
 				</div>
 			</header>
 
@@ -278,6 +354,8 @@
 				<div class="bezel">
 					<i class="screw tl"></i><i class="screw tr"></i><i class="screw bl"></i><i class="screw br"></i>
 					<Scope
+						{theme}
+						{lang}
 						{scenario}
 						meta={data.meta}
 						grid={data.grid}
@@ -296,74 +374,97 @@
 					/>
 				</div>
 				<div class="switches">
-					<button class="key" class:lit={showRings} onclick={() => (showRings = !showRings)}>RINGS</button>
-					<button class="key" class:lit={showFallout} onclick={() => (showFallout = !showFallout)}>FALLOUT</button>
-					<button class="key" class:lit={showDensity} onclick={() => (showDensity = !showDensity)}>POPULATION</button>
+					{#if themeId === 'sage'}
+						<svg class="gun" viewBox="0 0 120 54" role="img" aria-label="Light gun in its holder">
+							<path d="M6 16h78l14 5v9l-14 3H56l-6 17H30l5-17H6z" fill="#7d8583" stroke="#23292a" stroke-width="2" />
+							<path d="M98 22h16v7H98z" fill="#23292a" />
+							<path d="M44 33l-4 9" stroke="#23292a" stroke-width="3" />
+							<circle cx="114" cy="25.500" r="2" fill="#f5f6ff" />
+						</svg>
+					{/if}
+					<span class="group-label">{L.dataSelect}</span>
+					<button class="key" class:lit={showRings} onclick={() => (showRings = !showRings)}>{L.rings}</button>
+					<button class="key" class:lit={showFallout} onclick={() => (showFallout = !showFallout)}>{L.fallout}</button>
+					<button class="key" class:lit={showDensity} onclick={() => (showDensity = !showDensity)}>{L.population}</button>
+					{#if themeId === 'sage'}
+						<svg class="dial" viewBox="0 0 60 60" role="img" aria-label="Telephone dial">
+							<circle cx="30" cy="30" r="28" fill="#8a918f" stroke="#23292a" stroke-width="2" />
+							{#each Array(10) as _, i (i)}
+								<circle
+									cx={30 + 19 * Math.cos(((i * 30 - 60) * Math.PI) / 180)}
+									cy={30 + 19 * Math.sin(((i * 30 - 60) * Math.PI) / 180)}
+									r="4"
+									fill="#23292a"
+								/>
+							{/each}
+							<circle cx="30" cy="30" r="8" fill="#c9cdc8" />
+						</svg>
+					{/if}
 				</div>
 			</section>
 
 			<aside class="desk">
 				<section class="teletype">
-					<div class="roll">
-						<p class="head">+++ OPERATIONAL ORDER {pad(scenario.day)} +++</p>
-						<p><b>{OBJECTIVE_TITLE[scenario.kind]}</b> / {scenario.theatre.name}</p>
-						<p>{objectiveText(scenario)}</p>
+					<div class="roll" class:reporting={final} bind:this={roll}>
+						{#if themeId === 'paper'}<p class="classification">SECRET · EXERCISE ONLY</p>{/if}
+						<p class="head">+++ {L.order} {pad(scenario.day)} +++</p>
+						<p><b>{OBJECTIVE_TITLE[lang][scenario.kind]}</b> / {theatreName}</p>
+						<p>{objectiveText(scenario, lang)}</p>
 						{#if conditions.length}
-							<p class="head">CONDITIONS</p>
+							<p class="head">{L.conditions}</p>
 							<ul>
 								{#each conditions as c (c)}<li>{c}</li>{/each}
 							</ul>
 						{/if}
-						<p class="head">WEATHER</p>
+						<p class="head">{L.weather}</p>
 						<p>
-							{scenario.weather.precip}. WIND TOWARD {String(scenario.weather.windBearing).padStart(3, '0')}° AT
-							{scenario.weather.windKmh} KM/H.
+							{ru ? PRECIP_RU[scenario.weather.precip] : scenario.weather.precip}. {L.windToward}
+							{String(scenario.weather.windBearing).padStart(3, '0')}°{ru ? ',' : ` ${L.at}`}
+							{fmtWind(scenario.weather.windKmh, lang)}.
 						</p>
 
 						{#if lastRun && !final}
-							<p class="head">WARGAME {wargamesUsed} OF {scenario.wargames}</p>
+							<p class="head">{L.wargame} {wargamesUsed} {L.of} {scenario.wargames}</p>
 							<p>
-								{SCORE_UNIT[scenario.kind]}: <b>{fmtScore(scenario, lastRun.value)}</b>
+								{SCORE_UNIT[lang][scenario.kind]}: <b>{fmtScore(scenario, lastRun.value, lang)}</b>
 							</p>
 							<ul class="checks">
-								{#each lastRun.checks as c (c.label)}
-									<li class:bad={!c.ok}>{c.ok ? 'PASS' : 'FAIL'} {c.label} {c.detail}</li>
+								{#each checksOf(lastRun) as c (c.label)}
+									<li class:bad={!c.ok}>{c.ok ? L.pass : L.fail} {c.label} {c.detail}</li>
 								{/each}
 							</ul>
 						{/if}
 
 						{#if final}
-							<p class="head">+++ STRIKE REPORT +++</p>
-							<p class="verdict" class:bad={!final.passed}>
-								{final.passed ? 'MISSION ACCOMPLISHED' : 'MISSION FAILED'}
-							</p>
+							<p class="head" bind:this={reportHead}>+++ {L.report} +++</p>
+							<p class="verdict" class:bad={!final.passed}>{final.passed ? L.success : L.failure}</p>
 							<p>
-								RATING <b>{final.rating}</b> · {rankFor(final.rating)}<br />
-								{SCORE_UNIT[scenario.kind]}: <b>{fmtScore(scenario, final.value)}</b><br />
-								FATALITIES {fmtScore({ kind: 'fatalities' }, final.tally.fatalities)} ·
-								STRUCTURES {fmtScore({ kind: 'structures' }, final.tally.structures)}
+								{L.rating} <b>{final.rating}</b> · {rankText(final.rating)}<br />
+								{SCORE_UNIT[lang][scenario.kind]}: <b>{fmtScore(scenario, final.value, lang)}</b><br />
+								{L.fatalities} {fmtScore({ kind: 'fatalities' }, final.tally.fatalities, lang)} ·
+								{L.structures} {fmtScore({ kind: 'structures' }, final.tally.structures, lang)}
 							</p>
 							<ul class="checks">
-								{#each final.checks as c (c.label)}
-									<li class:bad={!c.ok}>{c.ok ? 'PASS' : 'FAIL'} {c.label} {c.detail}</li>
+								{#each checksOf(final) as c (c.label)}
+									<li class:bad={!c.ok}>{c.ok ? L.pass : L.fail} {c.label} {c.detail}</li>
 								{/each}
 							</ul>
 							{#if difficulty}
-								<p class="head">EXERCISE DIFFICULTY</p>
-								<p class="verdict">{difficulty.score}/100 · {difficulty.label}</p>
+								<p class="head">{L.difficulty}</p>
+								<p class="score-line">{difficulty.score}/100 · {ru ? DIFFICULTY_RU[difficulty.label] : difficulty.label}</p>
 								<ul>
-									<li>PLAUSIBLE PLANS THAT SUCCEEDED: {pct(difficulty.planPass)}</li>
-									<li>THEIR TYPICAL PROGRESS: {pct(difficulty.planProgress)}</li>
-									<li>ESTIMATE SURVIVES AIM ERROR: {pct(difficulty.tolerance)}</li>
-									<li>CONDITIONS IMPOSED: {difficulty.conditions}</li>
+									<li>{L.planPass}: {pct(difficulty.planPass)}</li>
+									<li>{L.planProgress}: {pct(difficulty.planProgress)}</li>
+									<li>{L.tolerance}: {pct(difficulty.tolerance)}</li>
+									<li>{L.condCount}: {difficulty.conditions}</li>
 								</ul>
 							{/if}
-							<p class="head">DAILY BOARD, SIMULATED WINGS</p>
+							<p class="head">{L.board}</p>
 							<ol class="board">
 								{#each board as row (row.name)}
 									<li class:you={row.you}>
-										<span>{row.name}</span>
-										<span>{row.failed ? 'FAILED' : fmtScore(scenario, row.value)}</span>
+										<span>{wingName(row.name)}</span>
+										<span>{row.failed ? L.failed : fmtScore(scenario, row.value, lang)}</span>
 									</li>
 								{/each}
 							</ol>
@@ -373,12 +474,12 @@
 
 				{#if final}
 					<section class="actions">
-						<button class="key lit wide" onclick={share}>{copied ? 'COPIED TO CLIPBOARD' : 'COPY RESULT'}</button>
-						<p class="engrave">NEXT EXERCISE AT 0000 LOCAL</p>
+						<button class="key lit wide" onclick={share}>{copied ? L.copied : L.copy}</button>
+						<p class="engrave">{L.next}</p>
 					</section>
 				{:else}
 					<section class="rack">
-						<h2>WARHEAD SELECT</h2>
+						<h2>{L.rack}</h2>
 						<div class="keys">
 							{#each scenario.arsenal as w, i (i)}
 								{@const set = placements.some((p) => p.slot === i)}
@@ -387,11 +488,11 @@
 									class:lit={selected === i}
 									class:armed={set}
 									onclick={() => (selected = i)}
-									title={`${w.name}, ${w.note}`}
+									title={`${weaponName(w)}, ${weaponNote(w)}`}
 								>
 									<span class="no">{String(i + 1).padStart(2, '0')}</span>
-									<span class="nm">{w.id.toUpperCase()}</span>
-									<span class="yd">{formatYield(w.maxKt)}</span>
+									<span class="nm">{weaponKey(w)}</span>
+									<span class="yd">{yieldText(w.maxKt)}</span>
 								</button>
 							{/each}
 						</div>
@@ -401,19 +502,21 @@
 						<section class="dials">
 							<div class="dial-head">
 								<div>
-									<strong>{selectedWeapon.name}</strong>
-									<span>{selectedWeapon.note}{selectedWeapon.theoretical ? ' · THEORETICAL' : ''}</span>
+									<strong>{weaponName(selectedWeapon)}</strong>
+									<span>{weaponNote(selectedWeapon)}{selectedWeapon.theoretical ? ` · ${L.theoretical}` : ''}</span>
 								</div>
 								{#if selectedPlacement}
-									<button class="key small" onclick={() => selected !== null && remove(selected)}>DISARM</button>
+									<button class="key small" onclick={() => selected !== null && remove(selected)}>{L.disarm}</button>
 								{/if}
 							</div>
 
 							{#if !selectedPlacement}
-								<p class="prompt">AIM LIGHT GUN AT THE DISPLAY TO ASSIGN GROUND ZERO</p>
+								<p class="prompt">{L.aim}</p>
 							{:else if selectedBurst}
-								<label class="dial">
-									<span>YIELD</span>
+								{@const [yieldValue, yieldUnit] = yieldParts(selectedBurst.kt, lang)}
+								{@const [hobValue, hobUnit] = heightParts(selectedBurst.hobM, lang)}
+								<label class="slider">
+									<span>{L.yieldLabel}</span>
 									<input
 										type="range"
 										min="0"
@@ -422,10 +525,10 @@
 										value={ktToSlider(selectedWeapon, selectedBurst.kt)}
 										oninput={(e) => setKt(+e.currentTarget.value)}
 									/>
-									<output>{formatYield(selectedBurst.kt)}</output>
+									<output>{@render number(yieldValue)}<small>{yieldUnit}</small></output>
 								</label>
-								<label class="dial">
-									<span>HEIGHT</span>
+								<label class="slider">
+									<span>{L.height}</span>
 									<input
 										type="range"
 										min="0"
@@ -434,23 +537,26 @@
 										value={hobToSlider(hobFor(scenario, selectedWeapon, selectedBurst.kt, selectedPlacement.hobM))}
 										oninput={(e) => setHob(hobFromSlider(+e.currentTarget.value))}
 									/>
-									<output>{hobLabel(selectedBurst.hobM)}</output>
+									<output>{@render number(hobValue)}<small>{hobUnit}</small></output>
 								</label>
 								{#if !selectedWeapon.surfaceOnly && !scenario.hobLock}
 									<div class="presets">
-										<button class="key small" onclick={() => setHob(0)}>SURFACE</button>
-										<button class="key small" onclick={() => setHob(optimumHobM(selectedBurst.kt))}>OPTIMUM</button>
-										<button class="key small" onclick={() => setHob(100000)}>EXO 100 KM</button>
-										<button class="key small" onclick={() => setHob(400000)}>EXO 400 KM</button>
+										<button class="key small" onclick={() => setHob(0)}>{L.surface}</button>
+										<button class="key small" onclick={() => setHob(optimumHobM(selectedBurst.kt))}>{L.optimum}</button>
+										<button class="key small" onclick={() => setHob(100000)}>{L.exo100}</button>
+										<button class="key small" onclick={() => setHob(400000)}>{L.exo400}</button>
 									</div>
 								{/if}
 								{#if selectedRings}
-									<dl class="radii">
-										<div><dt>20 PSI</dt><dd>{km(selectedRings.psi20)}</dd></div>
-										<div><dt>5 PSI</dt><dd>{km(selectedRings.psi5)}</dd></div>
-										<div><dt>1 PSI</dt><dd>{km(selectedRings.psi1)}</dd></div>
-										<div><dt>BURNS</dt><dd>{km(selectedRings.thermal)}</dd></div>
-									</dl>
+									<div class="digital">
+										<h3>{L.digital}</h3>
+										<dl>
+											<div><dt>{L.psi20}</dt><dd>{@render number(km(selectedRings.psi20))}</dd></div>
+											<div><dt>{L.psi5}</dt><dd>{@render number(km(selectedRings.psi5))}</dd></div>
+											<div><dt>{L.psi1}</dt><dd>{@render number(km(selectedRings.psi1))}</dd></div>
+											<div><dt>{L.burns}</dt><dd>{@render number(km(selectedRings.thermal))}</dd></div>
+										</dl>
+									</div>
 								{/if}
 							{/if}
 						</section>
@@ -458,11 +564,9 @@
 
 					<section class="commit">
 						<div class="wargame">
-							<button
-								class="key wide"
-								disabled={!canRun || wargamesUsed >= scenario.wargames}
-								onclick={runWargame}>RUN WARGAME</button
-							>
+							<button class="key wide" disabled={!canRun || wargamesUsed >= scenario.wargames} onclick={runWargame}>
+								{L.runWargame}
+							</button>
 							<div class="lamps" aria-label="{scenario.wargames - wargamesUsed} wargames left">
 								{#each Array(scenario.wargames) as _, i (i)}
 									<i class:on={i >= wargamesUsed}></i>
@@ -470,14 +574,9 @@
 							</div>
 						</div>
 						<div class="guard" class:open={coverOpen}>
-							<button class="fire" disabled={!canRun || !coverOpen} onclick={execute}>EXECUTE</button>
-							<button
-								class="cover"
-								disabled={!canRun}
-								aria-pressed={coverOpen}
-								onclick={() => (coverOpen = !coverOpen)}
-							>
-								{coverOpen ? 'CLOSE' : 'LIFT COVER'}
+							<button class="fire" disabled={!canRun || !coverOpen} onclick={execute}>{L.execute}</button>
+							<button class="cover" disabled={!canRun} aria-pressed={coverOpen} onclick={() => (coverOpen = !coverOpen)}>
+								{coverOpen ? L.close : L.lift}
 							</button>
 						</div>
 					</section>
@@ -487,42 +586,194 @@
 	{/if}
 
 	{#if showOrders}
-		<div class="overlay" role="dialog" aria-modal="true" aria-label="Standing orders">
+		<div class="overlay" role="dialog" aria-modal="true" aria-label={L.orders}>
 			<div class="slip">
-				<p class="head">+++ STANDING ORDERS +++</p>
-				<p>ONE EXERCISE A DAY. THE SAME MAP, WARHEADS AND WEATHER FOR EVERYONE.</p>
-				<ol>
-					<li>READ THE ORDER. OBJECTIVES CHANGE DAILY: FATALITIES, STRUCTURES, FALLOUT, EMP, COUNTERFORCE, LEAST YIELD, SURGICAL.</li>
-					<li>SELECT A WARHEAD, THEN CLICK THE DISPLAY TO SET GROUND ZERO. DRAG TO MOVE IT. THE ARROWS AND + / - BESIDE THE DISPLAY MOVE AND ZOOM THE MAP.</li>
-					<li>SET YIELD AND HEIGHT. SURFACE BURSTS MAKE FALLOUT. AIRBURSTS REACH FURTHER. ABOVE 30 KM IS EMP ONLY.</li>
-					<li>YOU GET THREE WARGAMES, WHICH REVEAL THE NUMBERS. THEN LIFT THE COVER AND EXECUTE. YOU ONLY EXECUTE ONCE.</li>
-				</ol>
-				<p class="fine">
-					EFFECTS ARE SIMPLIFIED FROM PUBLIC FIGURES IN GLASSTONE &amp; DOLAN AND OTA 1979. POPULATION: GHS-POP R2023A, BUILT-UP:
-					GHS-BUILT-S R2023A, EUROPEAN COMMISSION JRC, CC BY 4.0. STRUCTURE COUNTS ARE ESTIMATED FROM BUILT AREA. MAPS: NATURAL
-					EARTH, STREETS AND BUILDINGS © OPENSTREETMAP CONTRIBUTORS VIA OPENFREEMAP AND OPENMAPTILES, STREAMED AS YOU ZOOM. THE BOARD IS SIMULATED FROM THE COMMAND ESTIMATE, THERE IS NO SERVER.
-				</p>
-				<button class="key lit wide" onclick={closeOrders}>ACKNOWLEDGE</button>
+				{#if ru}
+					<p class="head">+++ ПОСТОЯННЫЕ УКАЗАНИЯ +++</p>
+					<p>ОДНО УЧЕНИЕ В СУТКИ. ОДНА КАРТА, БОЕЗАРЯДЫ И ПОГОДА ДЛЯ ВСЕХ.</p>
+					<ol>
+						<li>ПРОЧТИТЕ ПРИКАЗ. ЗАДАЧИ МЕНЯЮТСЯ ЕЖЕДНЕВНО: ПОТЕРИ, ЗДАНИЯ, СЛЕД, ЭМИ, КОНТРСИЛОВОЙ, МИНИМУМ МОЩНОСТИ, ТОЧЕЧНЫЙ.</li>
+						<li>ВЫБЕРИТЕ БОЕЗАРЯД НА ТАБЛО И УКАЖИТЕ ЭПИЦЕНТР НА ИНДИКАТОРЕ. ПЕРЕТАЩИТЕ ДЛЯ ПЕРЕНОСА. СТРЕЛКИ И + / − ДВИГАЮТ И МАСШТАБИРУЮТ КАРТУ.</li>
+						<li>ЗАДАЙТЕ МОЩНОСТЬ И ВЫСОТУ. НАЗЕМНЫЙ ВЗРЫВ ДАЁТ СЛЕД. ВОЗДУШНЫЙ ДЕЙСТВУЕТ ДАЛЬШЕ. ВЫШЕ 30 КМ ТОЛЬКО ЭМИ.</li>
+						<li>ТРИ ПРОБНЫХ РАСЧЁТА ПОКАЖУТ ЧИСЛА. ЗАТЕМ ОТКРОЙТЕ КРЫШКУ И НАЖМИТЕ ПУСК. ПУСК ТОЛЬКО ОДИН.</li>
+					</ol>
+					<p class="fine">
+						ДАВЛЕНИЕ В КГ/СМ², ВЕТЕР В М/С, СЛЕД В Р/Ч. ДАННЫЕ И ИСТОЧНИКИ СМ. НА АНГЛИЙСКОМ ЧЕРЕЗ КНОПКУ ПЕРЕВОД.
+					</p>
+				{:else}
+					<p class="head">+++ STANDING ORDERS +++</p>
+					<p>ONE EXERCISE A DAY. THE SAME MAP, WARHEADS AND WEATHER FOR EVERYONE.</p>
+					<ol>
+						<li>READ THE ORDER. OBJECTIVES CHANGE DAILY: FATALITIES, STRUCTURES, FALLOUT, EMP, COUNTERFORCE, LEAST YIELD, SURGICAL.</li>
+						<li>SELECT A WARHEAD, THEN CLICK THE DISPLAY TO SET GROUND ZERO. DRAG TO MOVE IT. THE ARROWS AND + / − BESIDE THE DISPLAY MOVE AND ZOOM THE MAP.</li>
+						<li>SET YIELD AND HEIGHT. SURFACE BURSTS MAKE FALLOUT. AIRBURSTS REACH FURTHER. ABOVE 30 KM IS EMP ONLY.</li>
+						<li>YOU GET THREE WARGAMES, WHICH REVEAL THE NUMBERS. THEN COMMIT AND EXECUTE. YOU ONLY EXECUTE ONCE.</li>
+					</ol>
+					<p class="fine">
+						EFFECTS ARE SIMPLIFIED FROM PUBLIC FIGURES IN GLASSTONE &amp; DOLAN AND OTA 1979. POPULATION: GHS-POP R2023A, BUILT-UP:
+						GHS-BUILT-S R2023A, EUROPEAN COMMISSION JRC, CC BY 4.0. STRUCTURE COUNTS ARE ESTIMATED FROM BUILT AREA. MAPS: NATURAL
+						EARTH, STREETS AND BUILDINGS © OPENSTREETMAP CONTRIBUTORS VIA OPENFREEMAP AND OPENMAPTILES, STREAMED AS YOU ZOOM. THE
+						BOARD IS SIMULATED FROM THE COMMAND ESTIMATE, THERE IS NO SERVER.
+					</p>
+				{/if}
+				<button class="key lit wide" onclick={closeOrders}>{L.acknowledge}</button>
 			</div>
 		</div>
 	{/if}
 </main>
 
 <style>
+	/* ---------- SAGE: textured light grey casing, grey keys, white legends, red lamps ---------- */
 	.room {
+		--hammer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .3 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+		--room-bg: radial-gradient(ellipse 90% 70% at 40% 40%, #1a3555 0%, #0c1a2c 55%, #05090f 100%);
+		--casing: var(--hammer), linear-gradient(180deg, #a4a9a6, #8b918f 70%, #7a807f);
+		--casing-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 20px 60px rgba(0, 0, 0, 0.7);
+		--plate-bg: linear-gradient(180deg, #c5c8c4, #aeb2ae);
+		--plate-edge: 1px solid rgba(0, 0, 0, 0.45);
+		--text: #1d2122;
+		--text-dim: #33393a;
+		--text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+		--section-edge: 1px solid rgba(0, 0, 0, 0.35);
+		--bezel-bg: var(--hammer), linear-gradient(145deg, #a9aeab, #858b89);
+		--bezel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.5);
+		--tube-face: radial-gradient(circle at 50% 48%, #24210c 0%, #15130a 62%, #070602 100%);
+		--tube-shadow: inset 0 0 40px 8px rgba(0, 0, 0, 0.7), inset 0 0 90px rgba(240, 220, 120, 0.09), 0 0 0 7px #4e5453, 0 0 0 11px #2a2f30, 0 0 0 13px #9da2a0;
+		--tube-glass:
+			radial-gradient(ellipse 58% 30% at 34% 16%, rgba(255, 245, 200, 0.1), transparent 70%),
+			radial-gradient(circle at 50% 50%, transparent 74%, rgba(0, 0, 0, 0.38) 100%),
+			repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 3px);
+		--readout: #1d2122;
+		--readout-glow: none;
+		--num: #fff0a0;
+		--num-glow: 0 0 6px rgba(255, 235, 140, 0.7);
+		--crt: 'Share Tech Mono', ui-monospace, monospace;
+		--engraved: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+		--tty: 'Courier Prime', 'Courier New', monospace;
+		--key-face: linear-gradient(180deg, #7d8583, #5f6665);
+		--key-text: #fff;
+		--key-border: 1px solid #23292a;
+		--key-radius: 2px;
+		--key-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 2px 0 #2a2f30, 0 3px 4px rgba(0, 0, 0, 0.4);
+		--lit-face: radial-gradient(ellipse at 50% 40%, #ffb3a0, #ee4a32 62%, #a92414);
+		--lit-text: #fff;
+		--lit-glow: 0 0 16px rgba(238, 74, 50, 0.65);
+		--armed-face: radial-gradient(ellipse at 50% 40%, #ffffff, #e4e6da 62%, #b5b8ac);
+		--armed-text: #1d2122;
+		--armed-glow: 0 0 12px rgba(255, 255, 240, 0.5);
+		--paper: #e7dfc4;
+		--ink: #24231e;
+		--bad: #a21c00;
+		--slot: linear-gradient(180deg, #33393a, #23282a);
+		--display: #17150a;
+		--accent: #cf3a24;
+		--lamp-off: radial-gradient(circle at 40% 35%, #5c2820, #2b100c);
+		--lamp-on: radial-gradient(circle at 40% 35%, #ffc4b4, #ee4a32 60%, #9c1f10);
+		--lamp-glow: 0 0 10px rgba(238, 74, 50, 0.8);
+		--title-size: 30px;
+
 		min-height: 100dvh;
 		padding: clamp(0px, 1.4vw, 20px);
-		background:
-			radial-gradient(ellipse 90% 70% at 40% 40%, #15263a 0%, #0a121d 55%, #05080d 100%);
+		background: var(--room-bg);
+		color: var(--text);
+		font-family: var(--engraved);
 	}
+
+	/* ---------- PVO: hammer-finish grey-green, nixie tubes, an indicator board ---------- */
+	.room[data-theme='pvo'] {
+		--room-bg: radial-gradient(ellipse 90% 70% at 40% 40%, #20241c 0%, #12140f 60%, #070806 100%);
+		--casing: var(--hammer), var(--hammer), linear-gradient(180deg, #5d7470, #4b5f5c 70%, #3f514e);
+		--casing-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.45), 0 20px 60px rgba(0, 0, 0, 0.8);
+		--plate-bg: linear-gradient(180deg, #c8c2a8, #aba58c);
+		--text: #eef0e0;
+		--text-dim: #cfd4bf;
+		--text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.6);
+		--section-edge: 1px solid rgba(0, 0, 0, 0.5);
+		--bezel-bg: var(--hammer), var(--hammer), linear-gradient(145deg, #546a66, #38494a);
+		--bezel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.6);
+		--tube-face: radial-gradient(circle at 50% 48%, #0f2410 0%, #081508 62%, #020602 100%);
+		--tube-shadow: inset 0 0 40px 10px rgba(0, 0, 0, 0.78), inset 0 0 90px rgba(140, 240, 90, 0.08), 0 0 0 9px #171a17, 0 0 0 11px #3f4a44;
+		--tube-glass:
+			radial-gradient(ellipse 58% 30% at 34% 16%, rgba(220, 255, 200, 0.09), transparent 70%),
+			radial-gradient(circle at 50% 50%, transparent 72%, rgba(0, 0, 0, 0.42) 100%);
+		--readout: #eef0e0;
+		--crt: 'PT Mono', ui-monospace, monospace;
+		--engraved: 'PT Sans Narrow', 'Arial Narrow', sans-serif;
+		--tty: 'PT Mono', 'Courier New', monospace;
+		--key-face: linear-gradient(180deg, #30302c, #141412);
+		--key-text: #f2f0dd;
+		--key-border: 1px solid #000;
+		--key-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2px 0 #060605, 0 3px 4px rgba(0, 0, 0, 0.6);
+		--lit-face: linear-gradient(180deg, #4a3a18, #2a2008);
+		--lit-text: #ffd27a;
+		--lit-glow: inset 0 0 12px rgba(255, 170, 40, 0.65), 0 0 8px rgba(255, 170, 40, 0.35);
+		--armed-face: linear-gradient(180deg, #1c3d1c, #0d240d);
+		--armed-text: #a8f58f;
+		--armed-glow: inset 0 0 12px rgba(90, 240, 90, 0.5);
+		--paper: #d9d8c9;
+		--ink: #23241f;
+		--slot: linear-gradient(180deg, #12150f, #0a0c08);
+		--display: #0c0a07;
+		--accent: #ff8a2a;
+		--lamp-off: radial-gradient(circle at 40% 35%, #4c2a10, #1f1006);
+		--lamp-on: radial-gradient(circle at 40% 35%, #ffd9a0, #ff8a2a 60%, #a84a05);
+		--lamp-glow: 0 0 10px rgba(255, 138, 42, 0.85);
+		--title-size: 28px;
+	}
+
+	/* ---------- CHART: a printed sheet on a planner's table, marked by hand ---------- */
+	.room[data-theme='paper'] {
+		--sheet: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='4'/%3E%3CfeColorMatrix values='0 0 0 0 .35 0 0 0 0 .28 0 0 0 0 .18 0 0 0 .11 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23p)'/%3E%3C/svg%3E");
+		--room-bg: linear-gradient(115deg, #2c3a30, #1f2a23 60%, #161e19);
+		--casing: none;
+		--casing-shadow: none;
+		--plate-bg: var(--sheet), #d9c48f;
+		--plate-edge: 1px solid #93794a;
+		--text: #2b261c;
+		--text-dim: #4a4233;
+		--text-shadow: none;
+		--section-edge: 1px solid #b7ab8a;
+		--bezel-bg: var(--sheet), #ece3c9;
+		--bezel-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 30px rgba(0, 0, 0, 0.55);
+		--tube-face:
+			linear-gradient(90deg, transparent 49.8%, rgba(90, 70, 40, 0.13) 50%, transparent 50.2%),
+			linear-gradient(0deg, transparent 49.8%, rgba(90, 70, 40, 0.1) 50%, transparent 50.2%),
+			var(--sheet),
+			#f0e7d0;
+		--tube-shadow: 0 0 0 1px #8d8163;
+		--readout: #2b261c;
+		--num: #2b261c;
+		--num-glow: none;
+		--crt: 'Courier Prime', ui-monospace, monospace;
+		--engraved: 'Courier Prime', 'Courier New', monospace;
+		--tty: 'Courier Prime', 'Courier New', monospace;
+		--key-face: var(--sheet), #f3ecd8;
+		--key-text: #2b261c;
+		--key-border: 1px solid #6d6248;
+		--key-radius: 1px;
+		--key-shadow: 1px 1px 0 rgba(60, 50, 30, 0.45);
+		--lit-face: var(--sheet), #f3ecd8;
+		--lit-text: #a01d16;
+		--lit-glow: inset 0 0 0 2px #a01d16;
+		--armed-face: var(--sheet), #dfe7cf;
+		--armed-text: #1f4a27;
+		--armed-glow: inset 0 0 0 1px #1f4a27;
+		--paper: #f1e9d3;
+		--slot: none;
+		--display: transparent;
+		--accent: #a01d16;
+		--lamp-off: none;
+		--lamp-on: none;
+		--title-size: 26px;
+	}
+
 	.status {
 		display: grid;
 		place-content: center;
 		min-height: 90dvh;
 		text-align: center;
 		font-family: var(--crt);
-		color: var(--phosphor);
-		text-shadow: 0 0 10px rgba(134, 247, 176, 0.6);
+		color: #f3e58a;
 		letter-spacing: 0.1em;
 	}
 	.status h1 {
@@ -539,9 +790,7 @@
 		}
 	}
 
-	/* The console: painted steel with a hammertone finish, lit from above. */
 	.console {
-		--hammer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .34 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
 		grid-template-rows: auto 1fr;
@@ -550,11 +799,8 @@
 		margin: 0 auto;
 		padding: 12px;
 		border-radius: 6px;
-		background: var(--hammer), linear-gradient(180deg, #5a6a6a, #3f4c50 70%, #333e43);
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.28),
-			inset 0 -2px 0 rgba(0, 0, 0, 0.45),
-			0 20px 60px rgba(0, 0, 0, 0.7);
+		background: var(--casing);
+		box-shadow: var(--casing-shadow);
 	}
 
 	.plate {
@@ -563,12 +809,13 @@
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
-		gap: 8px 24px;
+		gap: 8px 22px;
 		padding: 8px 14px;
-		border: 1px solid rgba(0, 0, 0, 0.5);
+		border: var(--plate-edge);
 		border-radius: 3px;
-		background: linear-gradient(180deg, #2c3438, #22292d);
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+		background: var(--plate-bg);
+		color: #1d2122;
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 	}
 	.title {
 		display: flex;
@@ -576,19 +823,16 @@
 		gap: 14px;
 	}
 	.title strong {
-		font-size: 30px;
+		font-size: var(--title-size);
 		font-weight: 600;
 		letter-spacing: 0.32em;
-		color: var(--legend);
-		text-shadow: 0 -1px 0 #000;
 	}
 	.title span,
 	.serial span,
 	.tally span {
 		font-size: 14px;
 		font-weight: 500;
-		letter-spacing: 0.14em;
-		color: var(--legend-dim);
+		letter-spacing: 0.12em;
 	}
 	.serial {
 		display: flex;
@@ -598,12 +842,20 @@
 	.tally {
 		display: flex;
 		align-items: center;
-		gap: 16px;
+		gap: 14px;
+		font-size: 17px;
 	}
-	.tally b {
+	.num {
 		font: 16px var(--crt);
-		color: var(--amber);
-		text-shadow: 0 0 6px rgba(255, 194, 74, 0.6);
+		padding: 0 4px;
+		border-radius: 2px;
+		background: var(--display);
+		color: var(--num);
+		text-shadow: var(--num-glow);
+	}
+	.selector {
+		display: flex;
+		gap: 5px;
 	}
 
 	.scope-bay {
@@ -617,13 +869,10 @@
 		position: relative;
 		width: min(100%, calc(100dvh - 100px));
 		min-width: 280px;
-		padding: clamp(14px, 2.4vw, 34px);
+		padding: clamp(18px, 2.4vw, 34px);
 		border-radius: 8px;
-		background: var(--hammer), linear-gradient(145deg, #4d5b5b, #2e383c);
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.22),
-			inset 0 0 0 1px rgba(0, 0, 0, 0.5),
-			0 2px 6px rgba(0, 0, 0, 0.6);
+		background: var(--bezel-bg);
+		box-shadow: var(--bezel-shadow);
 	}
 	.screw {
 		position: absolute;
@@ -632,7 +881,7 @@
 		border-radius: 50%;
 		background:
 			linear-gradient(35deg, transparent 44%, #1a1f21 45% 55%, transparent 56%),
-			radial-gradient(circle at 35% 30%, #9aa5a2, #4a5354);
+			radial-gradient(circle at 35% 30%, #c5ccc8, #626b6b);
 		box-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
 	}
 	.tl { top: 8px; left: 8px; }
@@ -643,36 +892,49 @@
 	.switches {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		justify-content: center;
 		gap: 8px;
 	}
+	.group-label {
+		font-size: 13px;
+		font-weight: 500;
+		letter-spacing: 0.14em;
+		color: var(--text);
+		text-shadow: var(--text-shadow);
+	}
+	.gun {
+		width: 96px;
+		height: auto;
+		margin-right: 12px;
+	}
+	.dial {
+		width: 46px;
+		height: 46px;
+		margin-left: 12px;
+	}
 
-	/* Backlit square pushbuttons with engraved legends. */
+	/* Illuminated pushbuttons. */
 	.key {
 		appearance: none;
 		min-height: 40px;
 		padding: 6px 12px;
-		border: 1px solid #14191b;
-		border-radius: 2px;
+		border: var(--key-border);
+		border-radius: var(--key-radius);
 		font: 600 14px var(--engraved);
 		letter-spacing: 0.12em;
-		color: #c9cdbb;
+		color: var(--key-text);
 		cursor: pointer;
-		background: linear-gradient(180deg, #4a5252, #2d3334);
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.2),
-			0 2px 0 #0e1213,
-			0 3px 4px rgba(0, 0, 0, 0.5);
+		background: var(--key-face);
+		box-shadow: var(--key-shadow);
 		transition: transform 60ms, box-shadow 60ms, background 120ms, color 120ms;
 	}
 	.key:hover:not(:disabled) {
-		color: #fff;
+		filter: brightness(1.1);
 	}
 	.key:active:not(:disabled) {
 		transform: translateY(2px);
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.12),
-			0 0 0 #0e1213;
+		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
 	}
 	.key:disabled {
 		opacity: 0.45;
@@ -686,13 +948,21 @@
 	.key.wide {
 		width: 100%;
 	}
+	.key.armed {
+		color: var(--armed-text);
+		background: var(--armed-face);
+		box-shadow: var(--key-shadow), var(--armed-glow);
+	}
+	/* Red is kept for the selected warhead; a data toggle that's on is plainly backlit. */
+	[data-theme='sage'] .switches .key.lit {
+		color: var(--armed-text);
+		background: var(--armed-face);
+		box-shadow: var(--key-shadow), var(--armed-glow);
+	}
 	.key.lit {
-		color: #2a1b00;
-		background: radial-gradient(ellipse at 50% 40%, #ffe9a8, #ffc24a 60%, #d48f1e);
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.6),
-			0 2px 0 #0e1213,
-			0 0 16px rgba(255, 194, 74, 0.55);
+		color: var(--lit-text);
+		background: var(--lit-face);
+		box-shadow: var(--key-shadow), var(--lit-glow);
 	}
 
 	.desk {
@@ -700,13 +970,14 @@
 		flex-direction: column;
 		gap: 10px;
 		min-width: 0;
+		color: var(--text);
 	}
 
-	/* A roll of teletype paper feeding out of a slot in the panel. */
+	/* Paper feeding out of a slot in the panel. */
 	.teletype {
 		padding: 0 14px;
 		border-radius: 3px;
-		background: linear-gradient(180deg, #181d20, #101416);
+		background: var(--slot);
 		box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
 	}
 	.roll {
@@ -719,6 +990,9 @@
 		color: var(--ink);
 		font: 14px/1.45 var(--tty);
 		box-shadow: inset 0 10px 10px -8px rgba(0, 0, 0, 0.6);
+	}
+	.roll.reporting {
+		max-height: calc(100dvh - 240px);
 	}
 	.roll p {
 		margin: 0 0 8px;
@@ -738,10 +1012,11 @@
 	}
 	.checks .bad,
 	.verdict.bad {
-		color: #a21c00;
+		color: var(--bad);
 		font-weight: 700;
 	}
-	.verdict {
+	.verdict,
+	.score-line {
 		font-size: 18px;
 		font-weight: 700;
 	}
@@ -763,18 +1038,19 @@
 	.commit,
 	.actions {
 		padding: 10px 12px;
-		border: 1px solid rgba(0, 0, 0, 0.45);
+		border: var(--section-edge);
 		border-radius: 3px;
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 	}
 	.rack h2,
-	.engrave {
+	.engrave,
+	.digital h3 {
 		margin: 0 0 8px;
 		font-size: 14px;
 		font-weight: 500;
-		letter-spacing: 0.18em;
-		color: var(--legend-dim);
-		text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.7);
+		letter-spacing: 0.16em;
+		color: var(--text-dim);
+		text-shadow: var(--text-shadow);
 	}
 	.engrave {
 		margin: 8px 0 0;
@@ -792,12 +1068,12 @@
 		align-items: center;
 		min-height: 58px;
 		padding: 4px 3px;
-		letter-spacing: 0.06em;
+		letter-spacing: 0.04em;
 	}
 	.warhead .no {
 		align-self: flex-start;
 		font: 10px var(--crt);
-		opacity: 0.7;
+		opacity: 0.8;
 	}
 	.warhead .nm {
 		font-size: 15px;
@@ -807,14 +1083,6 @@
 		font: 12px var(--crt);
 		letter-spacing: 0;
 		margin-top: 3px;
-	}
-	.warhead.armed:not(.lit) {
-		color: #06230f;
-		background: radial-gradient(ellipse at 50% 40%, #b9ffcf, #5fd78a 62%, #3aa762);
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.55),
-			0 2px 0 #0e1213,
-			0 0 12px rgba(95, 215, 138, 0.45);
 	}
 
 	.dial-head {
@@ -828,42 +1096,48 @@
 		font-size: 19px;
 		font-weight: 600;
 		letter-spacing: 0.08em;
+		text-shadow: var(--text-shadow);
 	}
 	.dial-head span,
 	.prompt {
 		font-size: 14px;
-		letter-spacing: 0.1em;
-		color: var(--legend-dim);
+		letter-spacing: 0.08em;
+		color: var(--text-dim);
 	}
 	.prompt {
 		margin: 10px 0 2px;
-		color: var(--amber);
+		color: var(--accent);
+		font-weight: 600;
 	}
-	.dial {
+	.slider {
 		display: grid;
-		grid-template-columns: 54px 1fr 86px;
+		grid-template-columns: 66px 1fr auto;
 		align-items: center;
 		gap: 8px;
 		margin-top: 9px;
 		font-size: 14px;
-		letter-spacing: 0.12em;
+		letter-spacing: 0.1em;
 	}
-	.dial output {
-		padding: 3px 6px;
-		text-align: right;
-		font: 15px var(--crt);
-		letter-spacing: 0;
-		color: var(--phosphor);
-		text-shadow: 0 0 6px rgba(134, 247, 176, 0.65);
-		background: #06100d;
-		border-radius: 2px;
-		box-shadow: inset 0 1px 4px #000;
+	.slider output {
+		display: inline-flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 4px;
+		min-width: 92px;
+		font-size: 25px;
 	}
-	.dial input {
+	.slider small {
+		font: 500 12px var(--engraved);
+		letter-spacing: 0.06em;
+	}
+	.slider .num {
+		font-size: 15px;
+	}
+	.slider input {
 		width: 100%;
-		accent-color: var(--amber);
+		accent-color: var(--accent);
 	}
-	.dial input:disabled {
+	.slider input:disabled {
 		opacity: 0.35;
 	}
 	.presets {
@@ -872,27 +1146,39 @@
 		gap: 6px;
 		margin-top: 9px;
 	}
-	.radii {
+
+	/* The five-inch tabular tube that sits beside SAGE's situation display. */
+	.digital {
+		margin-top: 10px;
+		padding: 7px 10px 9px;
+		border-radius: 10px;
+		background: var(--display);
+		box-shadow: inset 0 1px 6px #000, 0 0 0 3px #4e5453;
+	}
+	.digital h3 {
+		margin-bottom: 4px;
+		font: 12px var(--crt);
+		color: #e3d27c;
+		text-shadow: none;
+	}
+	.digital dl {
 		display: grid;
 		grid-template-columns: repeat(4, 1fr);
 		gap: 6px;
-		margin: 10px 0 0;
-	}
-	.radii div {
-		padding: 4px 6px;
-		background: #06100d;
-		border-radius: 2px;
-		box-shadow: inset 0 1px 4px #000;
-	}
-	.radii dt {
-		font-size: 12px;
-		letter-spacing: 0.1em;
-		color: var(--legend-dim);
-	}
-	.radii dd {
 		margin: 0;
-		font: 15px var(--crt);
-		color: var(--phosphor);
+	}
+	.digital dt {
+		font: 12px var(--crt);
+		color: #cdbe74;
+	}
+	.digital dd {
+		margin: 0;
+		font-size: 22px;
+	}
+	.digital .num {
+		padding: 0;
+		background: none;
+		font-size: 16px;
 	}
 
 	.commit {
@@ -916,12 +1202,12 @@
 		width: 14px;
 		height: 14px;
 		border-radius: 50%;
-		background: radial-gradient(circle at 40% 35%, #47402d, #1c180f);
+		background: var(--lamp-off);
 		box-shadow: inset 0 0 2px #000, 0 0 0 2px #1a1f21;
 	}
 	.lamps i.on {
-		background: radial-gradient(circle at 40% 35%, #fff2c2, #ffc24a 60%, #c07c15);
-		box-shadow: 0 0 10px rgba(255, 194, 74, 0.75), 0 0 0 2px #1a1f21;
+		background: var(--lamp-on);
+		box-shadow: var(--lamp-glow), 0 0 0 2px #1a1f21;
 	}
 
 	/* The firing button sits under a red hinged guard. */
@@ -953,7 +1239,7 @@
 		border: 2px solid #4d0d00;
 		border-radius: 4px;
 		font: 600 14px var(--engraved);
-		letter-spacing: 0.16em;
+		letter-spacing: 0.14em;
 		color: #ffd7c9;
 		cursor: pointer;
 		background:
@@ -1015,6 +1301,201 @@
 		opacity: 0.8;
 	}
 
+	/* ---------- PVO hardware ---------- */
+	[data-theme='pvo'] .plate {
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 1px 2px rgba(0, 0, 0, 0.5);
+	}
+	[data-theme='pvo'] .title strong {
+		letter-spacing: 0.22em;
+	}
+	/* The rack is an electronic board of lit cells, per the Vozdukh-1 workplaces. */
+	[data-theme='pvo'] .keys {
+		gap: 3px;
+		padding: 5px;
+		background: #050504;
+		border-radius: 2px;
+		box-shadow: inset 0 1px 5px #000;
+	}
+	[data-theme='pvo'] .warhead {
+		border: 0;
+		border-radius: 0;
+		color: #6f6c55;
+		background: #181712;
+		box-shadow: none;
+	}
+	[data-theme='pvo'] .warhead.armed {
+		color: var(--armed-text);
+		background: var(--armed-face);
+		box-shadow: var(--armed-glow);
+	}
+	[data-theme='pvo'] .warhead.lit {
+		color: var(--lit-text);
+		background: var(--lit-face);
+		box-shadow: var(--lit-glow);
+	}
+	[data-theme='pvo'] .digital {
+		border-radius: 2px;
+		box-shadow: inset 0 1px 6px #000;
+	}
+	[data-theme='pvo'] .digital h3,
+	[data-theme='pvo'] .digital dt {
+		color: #c8c2a8;
+	}
+	[data-theme='pvo'] .tally {
+		font-size: 23px;
+		color: #1d2122;
+	}
+	[data-theme='pvo'] .fire {
+		inset: 4px auto auto 50%;
+		width: 78px;
+		height: 78px;
+		margin-left: -39px;
+		border-radius: 50%;
+		border: 4px solid #2a2a26;
+		font-size: 19px;
+		letter-spacing: 0.08em;
+		box-shadow: inset 0 3px 3px rgba(255, 255, 255, 0.5), inset 0 -6px 8px rgba(90, 0, 0, 0.5), 0 0 22px rgba(255, 90, 51, 0.6), 0 0 0 3px #101010;
+	}
+	[data-theme='pvo'] .guard.open .fire {
+		top: 28px;
+	}
+	[data-theme='pvo'] .guard {
+		min-height: 110px;
+	}
+
+	/* ---------- CHART materials ---------- */
+	[data-theme='paper'] .console {
+		padding: 16px;
+	}
+	[data-theme='paper'] .plate {
+		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+		border-radius: 2px 14px 2px 2px;
+	}
+	[data-theme='paper'] .title span,
+	[data-theme='paper'] .serial span,
+	[data-theme='paper'] .tally span {
+		font-size: 12px;
+		letter-spacing: 0.06em;
+	}
+	[data-theme='paper'] .title strong {
+		font-weight: 700;
+		letter-spacing: 0.3em;
+	}
+	[data-theme='paper'] .bezel {
+		border-radius: 1px;
+	}
+	/* Drawing pins, not screws. */
+	[data-theme='paper'] .screw {
+		width: 13px;
+		height: 13px;
+		background: radial-gradient(circle at 35% 30%, #ff9a86, #b3201a 65%, #6d0f0a);
+		box-shadow: 1px 2px 2px rgba(0, 0, 0, 0.55);
+	}
+	[data-theme='paper'] .switches,
+	[data-theme='paper'] .group-label {
+		color: #e4dcc0;
+	}
+	[data-theme='paper'] .group-label {
+		font-weight: 700;
+	}
+	[data-theme='paper'] .key {
+		font-weight: 700;
+		letter-spacing: 0.04em;
+	}
+	[data-theme='paper'] .key.armed::after {
+		content: ' ✓';
+	}
+	[data-theme='paper'] .teletype {
+		padding: 0;
+		background: none;
+		box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+	}
+	[data-theme='paper'] .roll {
+		background: var(--sheet), var(--paper);
+		box-shadow: none;
+		font-weight: 400;
+	}
+	.classification {
+		color: #a01d16;
+		font-weight: 700;
+		letter-spacing: 0.2em;
+		text-align: center;
+	}
+	[data-theme='paper'] .rack,
+	[data-theme='paper'] .dials,
+	[data-theme='paper'] .commit,
+	[data-theme='paper'] .actions {
+		background: var(--sheet), var(--paper);
+		box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+		border-radius: 1px;
+	}
+	[data-theme='paper'] .digital {
+		padding: 6px 0 0;
+		border-top: 1px dashed #6d6248;
+		border-radius: 0;
+		box-shadow: none;
+	}
+	[data-theme='paper'] .digital h3,
+	[data-theme='paper'] .digital dt {
+		color: #4a4233;
+	}
+	/* Wargames are pencil tally boxes. */
+	[data-theme='paper'] .lamps i {
+		border-radius: 0;
+		background: none;
+		box-shadow: inset 0 0 0 1.5px #2b261c;
+	}
+	[data-theme='paper'] .lamps i:not(.on) {
+		background:
+			linear-gradient(45deg, transparent 46%, #a01d16 46% 54%, transparent 54%),
+			linear-gradient(-45deg, transparent 46%, #a01d16 46% 54%, transparent 54%);
+	}
+	[data-theme='paper'] .lamps i.on {
+		background: none;
+		box-shadow: inset 0 0 0 1.5px #2b261c;
+	}
+	/* Execute is a signature, then a rubber stamp. */
+	[data-theme='paper'] .cover {
+		border: 1px solid #6d6248;
+		border-radius: 1px;
+		color: #2b261c;
+		background: var(--sheet), #d9c48f;
+		box-shadow: 1px 2px 3px rgba(40, 30, 10, 0.5);
+	}
+	[data-theme='paper'] .fire {
+		inset: 8px 6px 2px;
+		border: 4px double #a01d16;
+		border-radius: 3px;
+		font-size: 22px;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		color: #a01d16;
+		background: rgba(160, 29, 22, 0.05);
+		box-shadow: none;
+		transform: rotate(-4deg);
+	}
+	[data-theme='paper'] .fire:disabled {
+		filter: opacity(0.3);
+		box-shadow: none;
+	}
+	[data-theme='paper'] .guard.open .fire {
+		top: 28px;
+	}
+	[data-theme='paper'] .verdict {
+		display: inline-block;
+		padding: 2px 8px;
+		border: 3px double #1f4a27;
+		color: #1f4a27;
+		transform: rotate(-2deg);
+	}
+	[data-theme='paper'] .verdict.bad {
+		border-color: #a01d16;
+		color: #a01d16;
+	}
+	[data-theme='paper'] .engrave {
+		color: #4a4233;
+	}
+
 	@media (max-width: 900px) {
 		.console {
 			grid-template-columns: minmax(0, 1fr);
@@ -1030,6 +1511,10 @@
 		}
 		.roll {
 			max-height: 260px;
+		}
+		.gun,
+		.dial {
+			display: none;
 		}
 	}
 

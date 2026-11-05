@@ -124,6 +124,13 @@ const borders = mesh(countries, countries.objects.countries, (a: unknown, b: unk
 const lakesRaw = JSON.parse(readFileSync(join(srcDir, 'lakes.geojson'), 'utf8'));
 const riversRaw = JSON.parse(readFileSync(join(srcDir, 'rivers.geojson'), 'utf8'));
 const placesRaw = JSON.parse(readFileSync(join(srcDir, 'places.geojson'), 'utf8'));
+// Only the full edition of the Natural Earth places carries Russian names.
+const ruById = new Map<number, string>(
+	JSON.parse(readFileSync(join(srcDir, 'places-full.geojson'), 'utf8')).features.map((f: any) => [
+		f.properties.NE_ID,
+		f.properties.NAME_RU
+	])
+);
 
 const collectLines = (fc: any): number[][][] => {
 	const out: number[][][] = [];
@@ -218,7 +225,8 @@ for (const t of THEATRES) {
 				name: String(f.properties.nameascii ?? f.properties.name).toUpperCase(),
 				lat: +lat.toFixed(3),
 				lon: +lon.toFixed(3),
-				pop: f.properties.pop_max ?? 0
+				pop: f.properties.pop_max ?? 0,
+				ru: ruById.get(f.properties.ne_id) ?? undefined
 			};
 		})
 		.filter((p: any) =>

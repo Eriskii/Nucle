@@ -290,7 +290,7 @@ function rollConditions(rng: Rng, s: Scenario, data: TheatreData, places: Place[
 				const n = intBetween(rng, 1, 2);
 				s.protected = shuffled(rng, free)
 					.slice(0, n)
-					.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, psi: pick(rng, [1, 3, 5]) }));
+					.map((p) => ({ name: p.name, ru: p.ru, lat: p.lat, lon: p.lon, psi: pick(rng, [1, 3, 5]) }));
 				used++;
 				break;
 			}
@@ -300,14 +300,14 @@ function rollConditions(rng: Rng, s: Scenario, data: TheatreData, places: Place[
 				const pool = free.filter((p) => !taken.has(p.name));
 				if (pool.length === 0) break;
 				const p = pick(rng, pool);
-				s.exclusion = { name: p.name, lat: p.lat, lon: p.lon, km: theatre.radiusKm * 0.05 };
+				s.exclusion = { name: p.name, ru: p.ru, lat: p.lat, lon: p.lon, km: theatre.radiusKm * 0.05 };
 				used++;
 				break;
 			}
 			case 'nofire': {
 				if (kind === 'counterforce' || kind === 'surgical' || free.length === 0) break;
 				const p = pick(rng, free);
-				s.noFire = { name: p.name, lat: p.lat, lon: p.lon, km: theatre.radiusKm * between(rng, 0.08, 0.2) };
+				s.noFire = { name: p.name, ru: p.ru, lat: p.lat, lon: p.lon, km: theatre.radiusKm * between(rng, 0.08, 0.2) };
 				used++;
 				break;
 			}
@@ -354,6 +354,7 @@ function buildBase(day: number, attempt: number, theatre: Theatre, data: Theatre
 		s.targets = from.map(
 			(p): Site => ({
 				name: p.name,
+				ru: p.ru,
 				lat: p.lat,
 				lon: p.lon,
 				psi: theatre.kind === 'city' ? pick(rng, [10, 20, 50]) : pick(rng, [20, 50, 100, 200])
@@ -363,7 +364,7 @@ function buildBase(day: number, attempt: number, theatre: Theatre, data: Theatre
 	if (kind === 'surgical') {
 		const p = pick(rng, places.slice(0, 12));
 		const km = theatre.kind === 'city' ? between(rng, 5, 12) : theatre.radiusKm * between(rng, 0.03, 0.06);
-		s.targetZone = { name: p.name, lat: p.lat, lon: p.lon, km } satisfies Zone;
+		s.targetZone = { name: p.name, ru: p.ru, lat: p.lat, lon: p.lon, km } satisfies Zone;
 	}
 	if (kind === 'economy') s.economyMetric = rng() < 0.5 ? 'fatalities' : 'structures';
 	rollConditions(rng, s, data, places);

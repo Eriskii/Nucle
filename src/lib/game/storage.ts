@@ -6,6 +6,7 @@ import type { Placement } from './scenario';
 const HISTORY = 'nucle_hist';
 const RUN = 'nucle_run';
 const SEEN = 'nucle_seen';
+const THEME = 'nucle_theme';
 const MAX_DAYS = 150;
 const YEAR_S = 34560000; // 400 days, the longest browsers will honour.
 
@@ -79,6 +80,9 @@ export function saveRun(run: SavedRun) {
 		.join(';');
 	writeCookie(RUN, `${run.day}|${run.wargamesUsed}|${run.done ? 1 : 0}|${rows}`);
 }
+
+export const loadThemeId = () => readCookie(THEME);
+export const saveThemeId = (id: string) => writeCookie(THEME, id);
 
 export const hasSeenOrders = () => readCookie(SEEN) === '1';
 export const markOrdersSeen = () => writeCookie(SEEN, '1');

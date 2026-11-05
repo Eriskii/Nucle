@@ -2,13 +2,17 @@
 	import { onMount, untrack } from 'svelte';
 	import type { TheatreMeta } from '#lib/game/data.ts';
 	import { falloutBands, ringsFor, empKm, type PlumeBand } from '#lib/game/effects.ts';
+	import { fmtPressure, fmtWind, placeName, UI, type Lang } from '#lib/game/i18n.ts';
 	import { destination, Projection } from '#lib/game/projection.ts';
 	import { toBurst, type Placement, type Scenario, type Zone } from '#lib/game/scenario.ts';
 	import type { PopGrid } from '#lib/game/sim.ts';
 	import type { TheatreKind } from '#lib/game/theatres.ts';
+	import type { Theme } from './themes.ts';
 	import { MAX_TILE_Z, MIN_TILE_Z, TileStore, tileZoomFor, type Tile } from './tiles.ts';
 
 	interface Props {
+		theme: Theme;
+		lang: Lang;
 		scenario: Scenario;
 		meta: TheatreMeta;
 		grid: PopGrid;
@@ -28,6 +32,8 @@
 	}
 
 	let {
+		theme,
+		lang,
 		scenario,
 		meta,
 		grid,
@@ -45,13 +51,8 @@
 		onplayed
 	}: Props = $props();
 
-	// P7 radar phosphor: a blue-white flash that decays to yellow-green.
-	const FLASH = '#dcefff';
-	const PHOSPHOR = '#86f7b0';
-	const PHOSPHOR_DIM = 'rgba(134, 247, 176, 0.42)';
-	const DECAY = '#b9d873';
-	const AMBER = '#ffc24a';
-	const ALERT = '#ff6a45';
+	const L = $derived(UI[lang]);
+	const fontOf = (px: number, family = theme.font) => `${px}px ${family}`;
 
 	const STIPPLE_FROM_PX = 9;
 
@@ -231,7 +232,7 @@
 			ctx.lineWidth = width;
 			ctx.stroke(path);
 			if (width * k > 3.5) {
-				ctx.strokeStyle = '#061310';
+				ctx.strokeStyle = theme.roadCore;
 				ctx.lineWidth = width - px(2.2);
 				ctx.stroke(path);
 			}
@@ -243,40 +244,40 @@
 		for (const t of tiles) {
 			ctx.save();
 			ctx.clip(t.frame);
-			ctx.fillStyle = 'rgba(46, 120, 110, 0.09)';
+			ctx.fillStyle = theme.green;
 			ctx.fill(t.green);
-			ctx.fillStyle = 'rgba(70, 150, 200, 0.16)';
+			ctx.fillStyle = theme.water;
 			ctx.fill(t.water);
-			ctx.strokeStyle = 'rgba(130, 210, 240, 0.85)';
+			ctx.strokeStyle = theme.lake;
 			ctx.lineWidth = px(1.2);
 			ctx.stroke(t.waterways);
 
 			if (t.z >= BUILDINGS_FROM_Z) {
-				ctx.fillStyle = 'rgba(134, 247, 176, 0.18)';
+				ctx.fillStyle = theme.buildingFill;
 				ctx.fill(t.buildings);
-				ctx.strokeStyle = 'rgba(175, 255, 205, 0.95)';
+				ctx.strokeStyle = theme.buildingEdge;
 				ctx.lineWidth = px(1);
 				ctx.stroke(t.buildings);
 			}
-			ctx.strokeStyle = 'rgba(225, 240, 228, 0.8)';
+			ctx.strokeStyle = theme.runway;
 			ctx.lineWidth = road(1.3, 20);
 			ctx.stroke(t.runways);
 			// Road hierarchy tightens with distance: from afar only highways stand out.
 			const near = Math.max(0, Math.min(1, (t.z - MIN_TILE_Z) / (MAX_TILE_Z - MIN_TILE_Z)));
-			if (t.z >= BUILDINGS_FROM_Z) casedRoad(t.roads.service, 'rgba(195, 220, 205, 0.7)', 0.9, 6);
-			casedRoad(t.roads.minor, `rgba(205, 228, 212, ${0.16 + 0.69 * near * near})`, 0.6 + 0.4 * near, 10);
-			casedRoad(t.roads.mid, `rgba(225, 240, 220, ${0.34 + 0.61 * near})`, 0.8 + 0.5 * near, 16);
-			casedRoad(t.roads.major, `rgba(245, 250, 232, ${0.62 + 0.38 * near})`, 1.1 + 0.7 * near, 26);
-			ctx.strokeStyle = 'rgba(185, 205, 255, 0.85)';
+			if (t.z >= BUILDINGS_FROM_Z) casedRoad(t.roads.service, theme.roadService, 0.9, 6);
+			casedRoad(t.roads.minor, `rgba(${theme.roadRgb}, ${0.16 + 0.69 * near * near})`, 0.6 + 0.4 * near, 10);
+			casedRoad(t.roads.mid, `rgba(${theme.roadRgb}, ${0.34 + 0.61 * near})`, 0.8 + 0.5 * near, 16);
+			casedRoad(t.roads.major, `rgba(${theme.roadRgb}, ${0.62 + 0.38 * near})`, 1.1 + 0.7 * near, 26);
+			ctx.strokeStyle = theme.rail;
 			ctx.lineWidth = px(1.1);
 			ctx.setLineDash([px(5), px(3)]);
 			ctx.stroke(t.rail);
-			ctx.strokeStyle = 'rgba(160, 250, 195, 0.8)';
+			ctx.strokeStyle = theme.border;
 			ctx.lineWidth = px(1.3);
 			ctx.setLineDash([px(4), px(3)]);
 			ctx.stroke(t.borders);
 			ctx.setLineDash([]);
-			ctx.strokeStyle = PHOSPHOR;
+			ctx.strokeStyle = theme.coast;
 			ctx.lineWidth = px(1.7);
 			ctx.stroke(t.water);
 			ctx.restore();
@@ -298,10 +299,10 @@
 		const ringStep = niceRing(radius / zoom / 3.5);
 		const originX = size / 2 - cx * pxPerKm;
 		const originY = size / 2 + cy * pxPerKm;
-		ctx.strokeStyle = 'rgba(134, 247, 176, 0.22)';
+		ctx.strokeStyle = theme.grid;
 		ctx.lineWidth = 1;
-		ctx.fillStyle = 'rgba(134, 247, 176, 0.75)';
-		ctx.font = `${Math.max(9, size / 66)}px "Share Tech Mono", monospace`;
+		ctx.fillStyle = theme.gridText;
+		ctx.font = fontOf(Math.max(9, size / 66));
 		// Only rings crossing the view: at deep zoom there could be thousands.
 		const viewKm = (size / 2 / pxPerKm) * Math.SQRT2;
 		const fromCentre = Math.hypot(cx, cy);
@@ -321,6 +322,16 @@
 			ctx.moveTo(originX, originY);
 			ctx.lineTo(originX + Math.sin(t) * radius * pxPerKm, originY - Math.cos(t) * radius * pxPerKm);
 			ctx.stroke();
+		}
+
+		if (theme.shape === 'square') {
+			ctx.save();
+			ctx.strokeStyle = theme.gridText;
+			ctx.setLineDash([9, 5]);
+			ctx.beginPath();
+			ctx.arc(originX, originY, radius * pxPerKm, 0, 2 * Math.PI);
+			ctx.stroke();
+			ctx.restore();
 		}
 
 		const isCity = scenario.theatre.kind === 'city';
@@ -345,9 +356,8 @@
 			}
 			const dot = Math.max(1, cellPx * 0.42);
 			if (cellPx <= STIPPLE_FROM_PX) {
-				const alpha = [0.14, 0.26, 0.48, 0.85];
 				buckets.forEach((pts, b) => {
-					ctx.fillStyle = `rgba(150, 245, 180, ${alpha[b]})`;
+					ctx.fillStyle = `rgba(${theme.dot}, ${theme.dotAlpha[b]})`;
 					for (const [x, y] of pts) ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot);
 				});
 			}
@@ -360,7 +370,7 @@
 			const cellH = meta.step * 111.2 * scale;
 			const cellW = cellH * Math.max(0.2, Math.cos((scenario.theatre.lat * Math.PI) / 180));
 			const area = cellW * cellH;
-			ctx.fillStyle = 'rgba(150, 245, 180, 0.62)';
+			ctx.fillStyle = theme.stipple;
 			for (let i = 0; i < grid.n; i++) {
 				const x = screenX(i);
 				const y = screenY(i);
@@ -379,19 +389,18 @@
 
 		// Finer layers fade in with zoom so the wide view stays readable.
 		const fade = (from: number, to: number) => Math.max(0, Math.min(1, (zoom - from) / (to - from)));
-		const majorAt = isCity ? 0.9 : 1;
 		const minorIn = isCity ? fade(1.2, 3) : fade(1.5, 4);
 		// The baked map holds until the streamed tiles for this view have arrived.
 		if (!streamed?.complete) {
-			drawLines(ctx, layers.urban, `rgba(185, 216, 115, ${0.35 + 0.25 * fade(1, 4)})`, 1);
-			drawLines(ctx, layers.rivers, `rgba(130, 210, 240, ${isCity ? 0.7 : 0.5})`, 1.1);
-			drawLines(ctx, layers.lakes, 'rgba(130, 210, 240, 0.85)', 1.2);
-			if (layers.admin.length) drawLines(ctx, layers.admin, 'rgba(134, 247, 176, 0.42)', 1, [2, 4]);
-			if (minorIn > 0) drawLines(ctx, layers.minorRoads, `rgba(215, 235, 210, ${0.6 * minorIn})`, 1);
-			drawLines(ctx, layers.rail, `rgba(185, 205, 255, ${0.35 + 0.35 * fade(1, 3)})`, 1, [5, 3]);
-			drawLines(ctx, layers.roads, `rgba(235, 245, 225, ${0.42 * majorAt + 0.35 * fade(1, 4)})`, 1.1);
-			drawLines(ctx, layers.borders, 'rgba(160, 250, 195, 0.8)', 1.3, [5, 3]);
-			drawLines(ctx, layers.coast, PHOSPHOR, 1.7);
+			drawLines(ctx, layers.urban, theme.urban, 1);
+			drawLines(ctx, layers.rivers, theme.river, 1.1);
+			drawLines(ctx, layers.lakes, theme.lake, 1.2);
+			if (layers.admin.length) drawLines(ctx, layers.admin, theme.admin, 1, [2, 4]);
+			if (minorIn > 0) drawLines(ctx, layers.minorRoads, theme.minor, 1);
+			drawLines(ctx, layers.rail, theme.rail, 1, [5, 3]);
+			drawLines(ctx, layers.roads, theme.road, 1.1);
+			drawLines(ctx, layers.borders, theme.border, 1.3, [5, 3]);
+			drawLines(ctx, layers.coast, theme.coast, 1.7);
 		}
 		if (streamed) drawTiles(ctx, streamed.tiles, ratio);
 
@@ -405,13 +414,13 @@
 				const y = screenY(i);
 				if (x < -cellPx || y < -cellPx || x > size + cellPx || y > size + cellPx) continue;
 				const soften = cellPx > STIPPLE_FROM_PX ? 0.42 : 1;
-				ctx.fillStyle = d > 0.6 ? `rgba(255, 244, 214, ${(0.5 + d * 0.5) * soften})` : `rgba(255, 170, 70, ${(0.2 + d) * soften})`;
+				ctx.fillStyle = d > 0.6 ? `rgba(${theme.damageHot}, ${(0.5 + d * 0.5) * soften})` : `rgba(${theme.damageWarm}, ${(0.2 + d) * soften})`;
 				ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot);
 			}
 		}
 
 		// A soft second pass gives everything the bloom of a real CRT.
-		if ('filter' in ctx && !interacting) {
+		if (theme.emissive && 'filter' in ctx && !interacting) {
 			const copy = document.createElement('canvas');
 			copy.width = base.width;
 			copy.height = base.height;
@@ -428,7 +437,7 @@
 		// Labels, biggest first, skipping any that would collide. Objective labels
 		// are drawn on top each frame, so their space is reserved up front.
 		const fontPx = Math.max(11.5, size / 50);
-		ctx.font = `${fontPx}px "Share Tech Mono", monospace`;
+		ctx.font = fontOf(fontPx);
 		const taken: [number, number, number, number][] = [];
 		const claim = (x: number, y: number, w: number, h: number) => {
 			for (const r of taken) {
@@ -451,17 +460,18 @@
 		for (const m of majors) {
 			const [x, y] = toScreen(m.lat, m.lon);
 			if (x < 0 || y < 0 || x > size || y > size) continue;
-			const w = m.name.length * fontPx * 0.56;
+			const name = placeName(m, lang);
+			const w = name.length * fontPx * 0.56;
 			if (!claim(x - 4, y - fontPx * 1.1, w + 14, fontPx * 2)) continue;
-			ctx.fillStyle = DECAY;
+			ctx.fillStyle = theme.place;
 			ctx.fillRect(x - 2, y - 2, 4, 4);
 			// A dark outline keeps text legible on top of dense streets.
 			ctx.lineJoin = 'round';
 			ctx.lineWidth = 3.5;
-			ctx.strokeStyle = 'rgba(2, 10, 8, 0.92)';
-			ctx.strokeText(m.name, x + 6, y + fontPx * 0.32);
-			ctx.fillStyle = '#e6f7b4';
-			ctx.fillText(m.name, x + 6, y + fontPx * 0.32);
+			ctx.strokeStyle = theme.halo;
+			ctx.strokeText(name, x + 6, y + fontPx * 0.32);
+			ctx.fillStyle = theme.placeText;
+			ctx.fillText(name, x + 6, y + fontPx * 0.32);
 		}
 
 		baseStale = false;
@@ -509,36 +519,39 @@
 		ctx.closePath();
 	}
 
+	/** Text with an outline in the display's background, legible over anything. */
+	function outlined(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string) {
+		ctx.lineJoin = 'round';
+		ctx.lineWidth = 3.5;
+		ctx.strokeStyle = theme.halo;
+		ctx.strokeText(text, x, y);
+		ctx.fillStyle = color;
+		ctx.fillText(text, x, y);
+	}
+
 	function drawZone(ctx: CanvasRenderingContext2D, zone: Zone, color: string, tag: string) {
 		circlePath(ctx, zone.lat, zone.lon, zone.km);
 		ctx.strokeStyle = color;
-		ctx.lineWidth = 1.2;
+		ctx.lineWidth = theme.emissive ? 1.2 : 2;
 		ctx.setLineDash([7, 5]);
 		ctx.stroke();
 		ctx.setLineDash([]);
 		const [x, y] = toScreen(zone.lat, zone.lon);
-		ctx.fillStyle = color;
-		ctx.font = `${Math.max(11.5, size / 50)}px "Share Tech Mono", monospace`;
-		ctx.lineWidth = 3.5;
-		ctx.strokeStyle = 'rgba(2, 10, 8, 0.92)';
-		ctx.strokeText(`${tag} ${zone.name}`, x + 6, y - 6);
-		ctx.fillText(`${tag} ${zone.name}`, x + 6, y - 6);
+		ctx.font = fontOf(Math.max(11.5, size / 50));
+		outlined(ctx, `${tag} ${placeName(zone, lang)}`, x + 6, y - 6, color);
 	}
 
 	function drawObjectives(ctx: CanvasRenderingContext2D, now: number) {
-		const blink = reduced() ? 1 : 0.65 + 0.35 * Math.sin(now / 280);
-		ctx.font = `${Math.max(11.5, size / 50)}px "Share Tech Mono", monospace`;
-		ctx.lineJoin = 'round';
-		ctx.lineWidth = 3.5;
-		ctx.strokeStyle = 'rgba(2, 10, 8, 0.92)';
-		if (scenario.targetZone) drawZone(ctx, scenario.targetZone, AMBER, 'TGT');
-		if (scenario.exclusion) drawZone(ctx, scenario.exclusion, FLASH, 'CLEAN');
-		if (scenario.noFire) drawZone(ctx, scenario.noFire, ALERT, 'NO FIRE');
+		const blink = reduced() || !theme.emissive ? 1 : 0.65 + 0.35 * Math.sin(now / 280);
+		ctx.font = fontOf(Math.max(11.5, size / 50));
+		if (scenario.targetZone) drawZone(ctx, scenario.targetZone, theme.target, L.tgt);
+		if (scenario.exclusion) drawZone(ctx, scenario.exclusion, theme.flash, L.clean);
+		if (scenario.noFire) drawZone(ctx, scenario.noFire, theme.alert, L.noFire);
 		for (const t of scenario.targets) {
 			const [x, y] = toScreen(t.lat, t.lon);
-			ctx.strokeStyle = AMBER;
+			ctx.strokeStyle = theme.target;
 			ctx.globalAlpha = blink;
-			ctx.lineWidth = 1.6;
+			ctx.lineWidth = theme.emissive ? 1.6 : 2.2;
 			ctx.beginPath();
 			ctx.moveTo(x, y - 8);
 			ctx.lineTo(x + 7, y + 5);
@@ -546,16 +559,12 @@
 			ctx.closePath();
 			ctx.stroke();
 			ctx.globalAlpha = 1;
-			ctx.lineWidth = 3.5;
-			ctx.strokeStyle = 'rgba(2, 10, 8, 0.92)';
-			ctx.strokeText(`${t.name} ${t.psi}PSI`, x + 10, y + 3);
-			ctx.fillStyle = AMBER;
-			ctx.fillText(`${t.name} ${t.psi}PSI`, x + 10, y + 3);
+			outlined(ctx, `${placeName(t, lang)} ${fmtPressure(t.psi, lang)}`, x + 10, y + 3, theme.target);
 		}
 		for (const p of scenario.protected) {
 			const [x, y] = toScreen(p.lat, p.lon);
-			ctx.strokeStyle = FLASH;
-			ctx.lineWidth = 1.4;
+			ctx.strokeStyle = theme.flash;
+			ctx.lineWidth = theme.emissive ? 1.4 : 2;
 			ctx.strokeRect(x - 5, y - 5, 10, 10);
 			ctx.beginPath();
 			ctx.moveTo(x - 5, y - 5);
@@ -563,12 +572,48 @@
 			ctx.moveTo(x + 5, y - 5);
 			ctx.lineTo(x - 5, y + 5);
 			ctx.stroke();
-			ctx.lineWidth = 3.5;
-			ctx.strokeStyle = 'rgba(2, 10, 8, 0.92)';
-			ctx.strokeText(`${p.name} <${p.psi}PSI`, x + 9, y + 3);
-			ctx.fillStyle = FLASH;
-			ctx.fillText(`${p.name} <${p.psi}PSI`, x + 9, y + 3);
+			outlined(ctx, `${placeName(p, lang)} <${fmtPressure(p.psi, lang)}`, x + 9, y + 3, theme.flash);
 		}
+	}
+
+	/** A slightly unsteady circle, the way a grease pencil follows a compass. */
+	function pencilRing(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, seed: number, reveal: number) {
+		const steps = Math.max(24, Math.min(90, Math.round(r / 3)));
+		const wobble = Math.min(2.2, 0.6 + r * 0.006);
+		ctx.beginPath();
+		for (let i = 0; i <= steps * reveal; i++) {
+			const a = (i / steps) * 2 * Math.PI + seed;
+			const n = Math.sin(a * 3 + seed * 7) * 0.6 + Math.sin(a * 7 + seed * 3) * 0.4;
+			const rr = r + n * wobble;
+			const px = x + Math.cos(a) * rr;
+			const py = y + Math.sin(a) * rr;
+			if (i === 0) ctx.moveTo(px, py);
+			else ctx.lineTo(px, py);
+		}
+	}
+
+	let hatch: CanvasPattern | null = null;
+	let hatchFor = '';
+	function hatchPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+		if (!hatch || hatchFor !== theme.plume) {
+			const c = document.createElement('canvas');
+			c.width = 12;
+			c.height = 12;
+			const h = c.getContext('2d')!;
+			h.strokeStyle = `rgba(${theme.plume}, 0.55)`;
+			h.lineWidth = 1.1;
+			h.beginPath();
+			h.moveTo(-3, 15);
+			h.lineTo(15, -3);
+			h.moveTo(-3, 3);
+			h.lineTo(3, -3);
+			h.moveTo(9, 15);
+			h.lineTo(15, 9);
+			h.stroke();
+			hatch = ctx.createPattern(c, 'repeat');
+			hatchFor = theme.plume;
+		}
+		return hatch;
 	}
 
 	function drawBurst(ctx: CanvasRenderingContext2D, p: Placement, grow = 1) {
@@ -577,14 +622,28 @@
 		const [x, y] = toScreen(b.lat, b.lon);
 		const rings = ringsFor(b.weapon, b.kt, b.hobM, scenario.weather);
 
+		const paper = !theme.emissive;
 		if (showFallout) {
 			const bands = falloutBands(b.weapon, b.kt, b.hobM, scenario.weather);
 			bands.forEach((band, i) => {
 				plumePath(ctx, b.lat, b.lon, band, grow);
-				ctx.fillStyle = `rgba(185, 216, 115, ${[0.15, 0.08, 0.05, 0.025][i]})`;
-				ctx.fill();
-				ctx.strokeStyle = `rgba(185, 216, 115, ${[0.9, 0.6, 0.4, 0.25][i]})`;
-				ctx.lineWidth = 1;
+				if (paper) {
+					// Hatched by hand, with the hottest contour hatched closest.
+					if (i <= 1) {
+						const pat = hatchPattern(ctx);
+						if (pat) {
+							ctx.fillStyle = pat;
+							ctx.fill();
+						}
+					}
+					ctx.strokeStyle = `rgba(${theme.plume}, ${[0.95, 0.8, 0.6, 0.4][i]})`;
+					ctx.lineWidth = 1.5;
+				} else {
+					ctx.fillStyle = `rgba(${theme.plume}, ${[0.15, 0.08, 0.05, 0.025][i]})`;
+					ctx.fill();
+					ctx.strokeStyle = `rgba(${theme.plume}, ${[0.9, 0.6, 0.4, 0.25][i]})`;
+					ctx.lineWidth = 1;
+				}
 				ctx.stroke();
 			});
 		}
@@ -593,43 +652,66 @@
 			const emp = empKm(b.kt, b.hobM);
 			if (emp > 0) {
 				circlePath(ctx, b.lat, b.lon, emp * grow);
-				ctx.strokeStyle = FLASH;
+				ctx.strokeStyle = theme.flash;
 				ctx.setLineDash([2, 5]);
-				ctx.lineWidth = 1.4;
+				ctx.lineWidth = paper ? 2 : 1.4;
 				ctx.stroke();
 				ctx.setLineDash([]);
-				ctx.fillStyle = 'rgba(160, 210, 255, 0.05)';
+				ctx.fillStyle = theme.empFill;
 				ctx.fill();
 			}
 			const circles: [number, string, number, number[]][] = [
-				[rings.thermal, 'rgba(255, 194, 74, 0.65)', 1, [3, 4]],
-				[rings.psi1, 'rgba(134, 247, 176, 0.5)', 1, []],
-				[rings.psi5, 'rgba(180, 250, 200, 0.9)', 1.3, []],
-				[rings.psi20, FLASH, 1.5, []]
+				[rings.thermal, theme.thermal, 1, [3, 4]],
+				[rings.psi1, theme.psi1, 1, []],
+				[rings.psi5, theme.psi5, 1.3, []],
+				[rings.psi20, theme.psi20, 1.5, []]
 			];
-			for (const [km, color, width, dash] of circles) {
-				if (km <= 0) continue;
-				const px = km * pxPerKm * grow;
-				if (px < 1.5) continue;
-				ctx.beginPath();
-				ctx.arc(x, y, px, 0, 2 * Math.PI);
+			circles.forEach(([km, color, width, dash], i) => {
+				if (km <= 0) return;
+				// On paper a ring is drawn around its compass, not grown from the centre.
+				const px = km * pxPerKm * (paper ? 1 : grow);
+				if (px < 1.5) return;
 				ctx.strokeStyle = color;
-				ctx.lineWidth = width;
-				ctx.setLineDash(dash);
+				if (paper) {
+					pencilRing(ctx, x, y, px, p.slot * 1.7 + i, grow);
+					ctx.lineWidth = width + 1;
+					ctx.setLineDash(dash.length ? [5, 5] : []);
+				} else {
+					ctx.beginPath();
+					ctx.arc(x, y, px, 0, 2 * Math.PI);
+					ctx.lineWidth = width;
+					ctx.setLineDash(dash);
+				}
 				ctx.stroke();
-			}
+			});
 			ctx.setLineDash([]);
 			if (rings.fireball * pxPerKm > 1.5) {
 				ctx.beginPath();
 				ctx.arc(x, y, rings.fireball * pxPerKm * grow, 0, 2 * Math.PI);
-				ctx.fillStyle = 'rgba(220, 239, 255, 0.55)';
+				ctx.fillStyle = theme.fireball;
 				ctx.fill();
 			}
 		}
 
-		// Track symbol, the bracket a Charactron tube would draw around a contact.
 		const s = isSelected ? 10 : 7;
-		ctx.strokeStyle = isSelected ? FLASH : PHOSPHOR;
+		const mark = isSelected ? theme.flash : theme.ink;
+		ctx.strokeStyle = mark;
+		if (paper) {
+			// A planner's ground zero: a pencilled circle and cross, with a number.
+			ctx.lineWidth = isSelected ? 2.6 : 2;
+			pencilRing(ctx, x, y, s, p.slot * 2.3, 1);
+			ctx.stroke();
+			ctx.beginPath();
+			ctx.moveTo(x - s - 3, y - s - 3);
+			ctx.lineTo(x + s + 3, y + s + 3);
+			ctx.moveTo(x + s + 3, y - s - 3);
+			ctx.lineTo(x - s - 3, y + s + 3);
+			ctx.stroke();
+			ctx.font = fontOf(Math.max(19, size / 34), theme.hand);
+			outlined(ctx, `${p.slot + 1}`, x + s + 5, y - s + 1, mark);
+			return;
+		}
+		// Track symbol, the character a Charactron tube stamps through its mask.
 		ctx.lineWidth = isSelected ? 2 : 1.4;
 		ctx.beginPath();
 		ctx.moveTo(x - s, y);
@@ -642,8 +724,8 @@
 		ctx.moveTo(x - 3, y);
 		ctx.lineTo(x + 3, y);
 		ctx.stroke();
-		ctx.fillStyle = isSelected ? FLASH : PHOSPHOR;
-		ctx.font = `${Math.max(10, size / 62)}px "Share Tech Mono", monospace`;
+		ctx.fillStyle = mark;
+		ctx.font = fontOf(Math.max(10, size / 62));
 		ctx.fillText(`${String(p.slot + 1).padStart(2, '0')}`, x + s + 3, y - s + 2);
 	}
 
@@ -652,12 +734,12 @@
 		const x = size * 0.14;
 		const y = size * 0.14;
 		const a = (scenario.weather.windBearing * Math.PI) / 180;
-		ctx.strokeStyle = PHOSPHOR_DIM;
+		ctx.strokeStyle = theme.dim;
 		ctx.lineWidth = 1;
 		ctx.beginPath();
 		ctx.arc(x, y, r, 0, 2 * Math.PI);
 		ctx.stroke();
-		ctx.strokeStyle = PHOSPHOR;
+		ctx.strokeStyle = theme.ink;
 		ctx.lineWidth = 1.5;
 		const tipX = x + Math.sin(a) * r;
 		const tipY = y - Math.cos(a) * r;
@@ -669,12 +751,13 @@
 		ctx.moveTo(tipX, tipY);
 		ctx.lineTo(tipX - Math.sin(a + 0.5) * r * 0.45, tipY + Math.cos(a + 0.5) * r * 0.45);
 		ctx.stroke();
-		ctx.fillStyle = PHOSPHOR;
-		ctx.font = `${Math.max(9, size / 72)}px "Share Tech Mono", monospace`;
+		ctx.font = fontOf(Math.max(9, size / 72));
 		ctx.textAlign = 'center';
-		ctx.fillText(`${scenario.weather.windKmh} KM/H`, x, y + r + 12);
+		outlined(ctx, fmtWind(scenario.weather.windKmh, lang), x, y + r + 12, theme.ink);
 		ctx.textAlign = 'start';
 	}
+
+	const DRUM_MS = 2400;
 
 	// Strike playback.
 	let playStart = 0;
@@ -692,6 +775,7 @@
 			if (local < 0) return;
 			const grow = 1 - Math.pow(1 - Math.min(1, local / GROW), 3);
 			drawBurst(ctx, p, grow);
+			if (!theme.emissive) return;
 			flash = Math.max(flash, 1 - local / 260);
 			const [x, y] = toScreen(p.lat, p.lon);
 			const r = Math.max(10, 60 * (1 - Math.min(1, local / 500)));
@@ -734,15 +818,28 @@
 		ctx.clearRect(0, 0, size, size);
 
 		ctx.save();
-		ctx.beginPath();
-		ctx.arc(size / 2, size / 2, size / 2 - 1, 0, 2 * Math.PI);
-		ctx.clip();
+		if (theme.shape === 'round') {
+			ctx.beginPath();
+			ctx.arc(size / 2, size / 2, size / 2 - 1, 0, 2 * Math.PI);
+			ctx.clip();
+		}
 
-		ctx.globalAlpha = 1;
 		ctx.drawImage(base!, 0, 0, size, size);
-		ctx.globalAlpha = 1;
 
-		if (!reduced()) {
+		// SAGE has no sweep. Its tubes are rewritten from the display drum, so traces
+		// brighten together then sag toward the next pass.
+		let rewrite = 1;
+		if (theme.motion === 'refresh' && !reduced()) {
+			const phase = (now % DRUM_MS) / DRUM_MS;
+			rewrite = Math.exp(-3.2 * phase);
+			ctx.globalCompositeOperation = 'lighter';
+			ctx.globalAlpha = 0.24 * Math.exp(-7 * phase);
+			ctx.drawImage(base!, 0, 0, size, size);
+			ctx.globalAlpha = 1;
+			ctx.globalCompositeOperation = 'source-over';
+		}
+
+		if (theme.motion === 'ppi' && !reduced()) {
 			// A rotating beam re-excites the phosphor: blue-white at the edge, decaying behind it.
 			const angle = (now / 5200) * 2 * Math.PI;
 			const buf = ensureSweep();
@@ -762,26 +859,28 @@
 			ctx.globalCompositeOperation = 'lighter';
 			ctx.drawImage(buf, 0, 0, size, size);
 			const beam = ctx.createConicGradient(angle - Math.PI / 2, size / 2, size / 2);
-			beam.addColorStop(0, 'rgba(150, 200, 255, 0)');
-			beam.addColorStop(0.9, 'rgba(120, 200, 255, 0)');
-			beam.addColorStop(0.995, 'rgba(150, 215, 255, 0.11)');
-			beam.addColorStop(1, 'rgba(210, 235, 255, 0.34)');
+			beam.addColorStop(0, 'rgba(190, 255, 170, 0)');
+			beam.addColorStop(0.9, 'rgba(170, 255, 150, 0)');
+			beam.addColorStop(0.995, 'rgba(190, 255, 170, 0.11)');
+			beam.addColorStop(1, 'rgba(230, 255, 210, 0.34)');
 			ctx.fillStyle = beam;
 			ctx.fillRect(0, 0, size, size);
 			ctx.globalCompositeOperation = 'source-over';
 		}
 
+		ctx.globalAlpha = theme.motion === 'refresh' ? 0.74 + 0.26 * rewrite : 1;
 		drawObjectives(ctx, now);
 		if (playing) {
 			drawPlayback(ctx, now);
 		} else {
 			for (const p of placements) drawBurst(ctx, p);
 		}
+		ctx.globalAlpha = 1;
 		drawWind(ctx);
 
 		if (cursor && !playing) {
 			const [x, y] = toScreen(cursor.lat, cursor.lon);
-			ctx.strokeStyle = 'rgba(220, 239, 255, 0.8)';
+			ctx.strokeStyle = theme.cursor;
 			ctx.lineWidth = 1;
 			ctx.beginPath();
 			ctx.arc(x, y, 12, 0, 2 * Math.PI);
@@ -905,6 +1004,11 @@
 			baseStale = true;
 		});
 		ro.observe(wrap);
+		// Canvas text only uses a font once it has loaded.
+		document.fonts?.ready.then(() => (baseStale = true));
+		for (const f of ['12px "PT Mono"', '12px "Share Tech Mono"', '12px "Courier Prime"', '12px "Reenie Beanie"']) {
+			document.fonts?.load(f, 'AЯ1').then(() => (baseStale = true));
+		}
 		let raf = 0;
 		const loop = (now: number) => {
 			frame(now);
@@ -925,6 +1029,8 @@
 		void damage;
 		void showDensity;
 		void layers;
+		void theme;
+		void lang;
 		baseStale = true;
 		// Bloom is costly, so it waits until the view stops moving.
 		interacting = true;
@@ -985,14 +1091,14 @@
 	];
 
 	const readout = $derived.by(() => {
-		if (!cursor) return 'LIGHT GUN STANDBY';
-		const ns = cursor.lat >= 0 ? 'N' : 'S';
-		const ew = cursor.lon >= 0 ? 'E' : 'W';
+		if (!cursor) return theme.id === 'paper' ? 'PLOTTING SHEET' : L.standby;
+		const ns = cursor.lat >= 0 ? (lang === 'ru' ? 'С' : 'N') : lang === 'ru' ? 'Ю' : 'S';
+		const ew = cursor.lon >= 0 ? (lang === 'ru' ? 'В' : 'E') : lang === 'ru' ? 'З' : 'W';
 		return `${Math.abs(cursor.lat).toFixed(3)}${ns} ${Math.abs(cursor.lon).toFixed(3)}${ew}`;
 	});
 </script>
 
-<div class="frame">
+<div class="frame" data-shape={theme.shape}>
 	<div class="tube" bind:this={wrap}>
 		<canvas
 			bind:this={canvas}
@@ -1008,6 +1114,9 @@
 			onwheel={onWheel}
 		></canvas>
 		<div class="glass" aria-hidden="true"></div>
+		{#if theme.id === 'sage'}
+			<span class="grease" aria-hidden="true">EX {String(scenario.day).padStart(3, '0')}</span>
+		{/if}
 	</div>
 	<div class="pad">
 		<div class="zooms">
@@ -1087,16 +1196,14 @@
 		width: 34px;
 		height: 34px;
 		padding: 0;
-		border: 1px solid #14191b;
-		border-radius: 2px;
+		border: var(--key-border);
+		border-radius: var(--key-radius);
 		font: 600 15px var(--crt);
-		color: #d6dac8;
+		color: var(--key-text);
 		cursor: pointer;
 		touch-action: none;
-		background: linear-gradient(180deg, #4a5252, #2d3334);
-		box-shadow:
-			inset 0 1px 0 rgba(255, 255, 255, 0.2),
-			0 2px 0 #0e1213;
+		background: var(--key-face);
+		box-shadow: var(--key-shadow);
 	}
 	.zooms .padkey {
 		width: 46px;
@@ -1104,16 +1211,15 @@
 		font-size: 24px;
 	}
 	.padkey:hover {
-		color: #fff;
+		filter: brightness(1.12);
 	}
 	.padkey:active {
 		transform: translateY(2px);
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-		color: var(--amber);
+		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
 	}
 	.home {
 		font-size: 10px;
-		color: var(--legend-dim);
+		opacity: 0.8;
 	}
 	@media (max-width: 900px) {
 		.frame {
@@ -1133,11 +1239,28 @@
 		width: 100%;
 		aspect-ratio: 1;
 		border-radius: 50%;
-		background: radial-gradient(circle at 50% 48%, #0d1f1b 0%, #071311 62%, #020706 100%);
-		box-shadow:
-			inset 0 0 40px 10px rgba(0, 0, 0, 0.75),
-			inset 0 0 90px rgba(90, 200, 160, 0.08);
+		background: var(--tube-face);
+		box-shadow: var(--tube-shadow);
 		overflow: hidden;
+	}
+	.grease {
+		position: absolute;
+		left: 62%;
+		top: 84%;
+		font: 25px 'Reenie Beanie', cursive;
+		color: rgba(120, 175, 255, 0.72);
+		transform: rotate(-7deg);
+		pointer-events: none;
+	}
+	[data-shape='square'] .tube {
+		border-radius: 0;
+	}
+	[data-shape='square'] canvas {
+		border-radius: 0;
+		mix-blend-mode: multiply;
+	}
+	[data-shape='square'] .glass {
+		display: none;
 	}
 	canvas {
 		display: block;
@@ -1150,10 +1273,7 @@
 		inset: 0;
 		border-radius: 50%;
 		pointer-events: none;
-		background:
-			radial-gradient(ellipse 58% 30% at 34% 16%, rgba(205, 230, 255, 0.11), transparent 70%),
-			radial-gradient(circle at 50% 50%, transparent 74%, rgba(0, 0, 0, 0.38) 100%),
-			repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.07) 0 1px, transparent 1px 3px);
+		background: var(--tube-glass);
 	}
 	.readout {
 		display: flex;
@@ -1162,21 +1282,22 @@
 		justify-content: space-between;
 		gap: 4px 16px;
 		margin-top: 8px;
-		font: 13px 'Share Tech Mono', monospace;
+		font: 13px var(--crt);
 		letter-spacing: 0.08em;
-		color: var(--phosphor);
+		color: var(--readout);
 	}
 	.coords {
-		text-shadow: 0 0 6px rgba(134, 247, 176, 0.6);
+		text-shadow: var(--readout-glow);
 	}
 	.credit {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0 10px;
-		font-size: 10px;
+		font-size: 11px;
 	}
 	.credit a {
-		color: var(--legend-dim);
+		color: var(--readout);
+		opacity: 0.85;
 		text-decoration: none;
 	}
 	.credit a:hover {

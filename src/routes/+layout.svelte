@@ -5,6 +5,11 @@
 	import '@fontsource/barlow-condensed/600.css';
 	import '@fontsource/courier-prime/400.css';
 	import '@fontsource/courier-prime/700.css';
+	import '@fontsource/nixie-one/400.css';
+	import '@fontsource/pt-mono/400.css';
+	import '@fontsource/pt-sans-narrow/400.css';
+	import '@fontsource/pt-sans-narrow/700.css';
+	import '@fontsource/reenie-beanie/400.css';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
