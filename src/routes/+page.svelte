@@ -378,7 +378,7 @@
 					<strong>{L.title}</strong>
 					<span>{L.console}</span>
 				</div>
-				<div class="serial">
+				<div class="serial card">
 					<span>{L.exercise} {pad(scenario.day)}{practice ? ` · ${L.archive}` : ''}</span>
 					<span>{scenario.date} · {theatreName}</span>
 				</div>
@@ -537,7 +537,7 @@
 				{:else}
 					<section class="rack">
 						<h2>{L.rack}</h2>
-						<div class="keys">
+						<div class="keys" class:dense={scenario.arsenal.length > 5}>
 							{#each scenario.arsenal as w, i (i)}
 								{@const set = placements.some((p) => p.slot === i)}
 								<button
@@ -548,8 +548,10 @@
 									title={`${weaponName(w)}, ${weaponNote(w)}`}
 								>
 									<span class="no">{String(i + 1).padStart(2, '0')}</span>
-									<span class="nm">{weaponKey(w)}</span>
-									<span class="yd">{yieldText(w.maxKt)}</span>
+									<span class="legend">
+										<span class="nm">{weaponKey(w)}</span>
+										<span class="yd">{yieldText(w.maxKt)}</span>
+									</span>
 								</button>
 							{/each}
 						</div>
@@ -558,7 +560,7 @@
 					{#if selectedWeapon}
 						<section class="dials">
 							<div class="dial-head">
-								<div>
+								<div class="card">
 									<strong>{weaponName(selectedWeapon)}</strong>
 									<span>{weaponNote(selectedWeapon)}{selectedWeapon.theoretical ? ` · ${L.theoretical}` : ''}</span>
 								</div>
@@ -715,11 +717,35 @@
 		--engraved: 'Routed Gothic', 'Arial Narrow', sans-serif;
 		--tty: 'Overpass Mono', 'Courier New', monospace;
 		font-synthesis: none;
+		--panel-hardware: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(25 5.5 5.5)'/%3E%3C/svg%3E") 4px 4px no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(-40 5.5 5.5)'/%3E%3C/svg%3E") calc(100% - 4px) 4px no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(80 5.5 5.5)'/%3E%3C/svg%3E") 4px calc(100% - 4px) no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(5 5.5 5.5)'/%3E%3C/svg%3E") calc(100% - 4px) calc(100% - 4px) no-repeat;
+		--panel-face: linear-gradient(180deg, rgba(255, 255, 255, 0.09), rgba(0, 0, 0, 0.09));
+		--panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 -1px 0 rgba(0, 0, 0, 0.35), 0 3px 5px rgba(0, 0, 0, 0.45);
+		--card-face: linear-gradient(180deg, #efe8d0, #e0d7ba);
+		--card-ink: #24231e;
+		--card-frame: 0 0 0 2px #4b5150, 0 0 0 3px #1c2021, 0 2px 3px 3px rgba(0, 0, 0, 0.35), inset 0 2px 3px rgba(0, 0, 0, 0.35);
+		--well-face: #17150a;
+		--well-ink: #fff0a0;
+		--well-shadow: inset 0 2px 5px #000, 0 0 0 2px #4e5453, 0 1px 0 2px rgba(255, 255, 255, 0.25);
+		--gauge-case: #868d8a;
+		--gauge-rim: #1d2122;
+		--gauge-face: #e8e1c8;
+		--gauge-ink: #24231e;
+		--gauge-needle: #b52c10;
+		--gauge-hub: #30363a;
+		--gauge-drop: rgba(0, 0, 0, 0.55);
+		--gauge-plate-ink: #111415;
 		--key-face: linear-gradient(180deg, #7d8583, #5f6665);
 		--key-text: #fff;
 		--key-border: 1px solid #23292a;
 		--key-radius: 2px;
-		--key-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 2px 0 #2a2f30, 0 3px 4px rgba(0, 0, 0, 0.4);
+		--key-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.38), inset 2px 0 0 rgba(255, 255, 255, 0.1), inset -2px 0 0 rgba(0, 0, 0, 0.18), inset 0 -3px 0 rgba(0, 0, 0, 0.3), 0 0 0 2px #2f3536, 0 5px 0 1px #1c2021, 0 8px 9px rgba(0, 0, 0, 0.55);
+		--key-pressed: inset 0 2px 5px rgba(0, 0, 0, 0.55), 0 0 0 2px #2f3536, 0 1px 0 1px #1c2021;
+		--track-face: linear-gradient(180deg, #0b0e0f, #2a3031);
+		--track-edge: inset 0 2px 3px #000, 0 1px 0 rgba(255, 255, 255, 0.22);
+		--tick: rgba(255, 255, 255, 0.34);
+		--thumb-face: linear-gradient(90deg, transparent 46%, #cf3a24 46% 54%, transparent 54%), repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.3) 0 1px, rgba(255, 255, 255, 0.14) 1px 3px), linear-gradient(180deg, #b6bdba, #6a7270 55%, #4c5352);
+		--thumb-edge: 1px solid #15191a;
+		--thumb-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.5), inset 0 -3px 0 rgba(0, 0, 0, 0.35), 0 3px 0 #15191a, 0 5px 6px rgba(0, 0, 0, 0.6);
 		--lit-face: radial-gradient(ellipse at 50% 40%, #ffb3a0, #ee4a32 62%, #a92414);
 		--lit-text: #fff;
 		--lit-glow: 0 0 16px rgba(238, 74, 50, 0.65);
@@ -767,10 +793,34 @@
 		--crt: 'Open GOST Type B', 'PT Mono', monospace;
 		--engraved: 'Open GOST Type B', 'Arial Narrow', sans-serif;
 		--tty: 'PT Mono', 'Courier New', monospace;
+		--panel-hardware: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(25 5.5 5.5)'/%3E%3C/svg%3E") 4px 4px no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(-40 5.5 5.5)'/%3E%3C/svg%3E") calc(100% - 4px) 4px no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(80 5.5 5.5)'/%3E%3C/svg%3E") 4px calc(100% - 4px) no-repeat, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.35' cy='.3'%3E%3Cstop stop-color='%23c5ccc8'/%3E%3Cstop offset='1' stop-color='%23565e5e'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='5.5' cy='5.5' r='5' fill='url(%23g)' stroke='%23161a1b' stroke-width='.8'/%3E%3Cpath d='M1.5 5.5h8' stroke='%2315191a' stroke-width='1.4' transform='rotate(5 5.5 5.5)'/%3E%3C/svg%3E") calc(100% - 4px) calc(100% - 4px) no-repeat;
+		--panel-face: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.14));
+		--panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -1px 0 rgba(0, 0, 0, 0.5), 0 3px 6px rgba(0, 0, 0, 0.6);
+		--card-face: linear-gradient(180deg, #e6dfc6, #d4cbab);
+		--card-ink: #24231e;
+		--card-frame: 0 0 0 2px #171917, 0 0 0 3px #000, 0 2px 3px 3px rgba(0, 0, 0, 0.5), inset 0 2px 3px rgba(0, 0, 0, 0.4);
+		--well-face: #050b05;
+		--well-ink: #ffb066;
+		--well-shadow: inset 0 2px 5px #000, 0 0 0 2px #171917, 0 1px 0 2px rgba(255, 255, 255, 0.14);
+		--gauge-case: #1f1f1c;
+		--gauge-rim: #000;
+		--gauge-face: #0d1a10;
+		--gauge-ink: #b7e29a;
+		--gauge-needle: #ff8a2a;
+		--gauge-hub: #30302c;
+		--gauge-drop: rgba(0, 0, 0, 0.75);
+		--gauge-plate-ink: #d9d6bf;
 		--key-face: linear-gradient(180deg, #30302c, #141412);
 		--key-text: #f2f0dd;
 		--key-border: 1px solid #000;
-		--key-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2px 0 #060605, 0 3px 4px rgba(0, 0, 0, 0.6);
+		--key-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), inset 2px 0 0 rgba(255, 255, 255, 0.06), inset -2px 0 0 rgba(0, 0, 0, 0.4), inset 0 -3px 0 rgba(0, 0, 0, 0.5), 0 0 0 2px #07090a, 0 5px 0 1px #030303, 0 8px 9px rgba(0, 0, 0, 0.7);
+		--key-pressed: inset 0 2px 6px #000, 0 0 0 2px #07090a, 0 1px 0 1px #030303;
+		--track-face: linear-gradient(180deg, #030403, #1b1f1a);
+		--track-edge: inset 0 2px 3px #000, 0 1px 0 rgba(255, 255, 255, 0.13);
+		--tick: rgba(242, 240, 221, 0.3);
+		--thumb-face: linear-gradient(90deg, transparent 46%, #ff8a2a 46% 54%, transparent 54%), repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.5) 0 1px, rgba(255, 255, 255, 0.07) 1px 3px), linear-gradient(180deg, #45453e, #1b1b18 55%, #0c0c0a);
+		--thumb-edge: 1px solid #000;
+		--thumb-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.25), inset 0 -3px 0 rgba(0, 0, 0, 0.6), 0 3px 0 #000, 0 5px 6px rgba(0, 0, 0, 0.8);
 		--lit-face: linear-gradient(180deg, #4a3a18, #2a2008);
 		--lit-text: #ffd27a;
 		--lit-glow: inset 0 0 12px rgba(255, 170, 40, 0.65), 0 0 8px rgba(255, 170, 40, 0.35);
@@ -816,11 +866,35 @@
 		--crt: 'Architects Daughter', cursive;
 		--engraved: 'Architects Daughter', cursive;
 		--tty: 'Courier Prime', 'Courier New', monospace;
+		--panel-hardware: none;
+		--panel-face: none;
+		--panel-shadow: none;
+		--card-face: none;
+		--card-ink: #2b261c;
+		--card-frame: none;
+		--well-face: none;
+		--well-ink: #2b261c;
+		--well-shadow: none;
+		--gauge-case: #eee6d0;
+		--gauge-rim: #6d6248;
+		--gauge-face: #f6efdc;
+		--gauge-ink: #2b261c;
+		--gauge-needle: #a01d16;
+		--gauge-hub: #a01d16;
+		--gauge-drop: rgba(60, 50, 30, 0.35);
+		--gauge-plate-ink: #2b261c;
 		--key-face: var(--sheet), #f3ecd8;
 		--key-text: #2b261c;
 		--key-border: 1px solid #6d6248;
 		--key-radius: 1px;
-		--key-shadow: 1px 1px 0 rgba(60, 50, 30, 0.45);
+		--key-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), inset 0 -2px 0 rgba(90, 76, 45, 0.28), 0 0 0 1px #8b7d5c, 0 3px 0 #8b7d5c, 0 5px 5px rgba(60, 50, 30, 0.4);
+		--key-pressed: inset 0 2px 4px rgba(60, 50, 30, 0.45), 0 0 0 1px #8b7d5c;
+		--track-face: linear-gradient(180deg, #b9ab87, #e3d9bd);
+		--track-edge: inset 0 2px 2px rgba(60, 50, 30, 0.55), 0 1px 0 rgba(255, 255, 255, 0.7);
+		--tick: rgba(60, 50, 30, 0.5);
+		--thumb-face: linear-gradient(90deg, transparent 47%, #a01d16 47% 53%, transparent 53%), linear-gradient(180deg, #f2d98e, #c79d3f 55%, #8d6a20);
+		--thumb-edge: 1px solid #5c4413;
+		--thumb-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), inset 0 -2px 0 rgba(70, 50, 10, 0.4), 0 3px 0 #5c4413, 0 5px 5px rgba(60, 50, 30, 0.5);
 		--lit-face: var(--sheet), #f3ecd8;
 		--lit-text: #a01d16;
 		--lit-glow: inset 0 0 0 2px #a01d16;
@@ -878,8 +952,8 @@
 	.plate {
 		grid-column: 1 / -1;
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) 230px 300px 354px;
-		grid-auto-rows: 44px;
+		grid-template-columns: minmax(0, 1fr) 270px 300px 354px;
+		grid-auto-rows: 50px;
 		align-items: center;
 		gap: 6px 14px;
 		padding: 6px 12px;
@@ -964,7 +1038,7 @@
 	}
 	.bezel {
 		position: relative;
-		width: min(100%, calc(100dvh - 100px));
+		width: min(100%, calc(100dvh - 114px));
 		min-width: 280px;
 		padding: clamp(18px, 2.4vw, 34px);
 		border-radius: 8px;
@@ -999,6 +1073,7 @@
 	}
 	.group-label {
 		width: 170px;
+		margin-right: 4px;
 		white-space: nowrap;
 		text-align: right;
 		font-size: 13px;
@@ -1031,7 +1106,7 @@
 	/* Illuminated pushbuttons. */
 	.key {
 		appearance: none;
-		min-height: 40px;
+		min-height: 46px;
 		padding: 6px 12px;
 		border: var(--key-border);
 		border-radius: var(--key-radius);
@@ -1047,16 +1122,16 @@
 		filter: brightness(1.1);
 	}
 	.key:active:not(:disabled) {
-		transform: translateY(2px);
-		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+		transform: translateY(4px);
+		box-shadow: var(--key-pressed);
 	}
 	.key:disabled {
 		opacity: 0.45;
 		cursor: not-allowed;
 	}
 	.key.small {
-		min-height: 28px;
-		padding: 2px 7px;
+		min-height: 36px;
+		padding: 2px 8px;
 		font-size: 12px;
 	}
 	.key.wide {
@@ -1095,7 +1170,7 @@
 		box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
 	}
 	.roll {
-		height: clamp(140px, 20dvh, 420px);
+		height: clamp(140px, calc(20dvh - 14px), 420px);
 		overflow-y: auto;
 		padding: 12px 14px 16px;
 		background:
@@ -1150,14 +1225,92 @@
 		margin: 0 -4px;
 	}
 
+	/* Each section is its own plate, screwed to the casing. */
 	.rack,
 	.dials,
 	.commit,
 	.actions {
-		padding: 8px 12px;
+		padding: 8px 20px;
 		border: var(--section-edge);
 		border-radius: 3px;
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+		background: var(--panel-hardware), var(--panel-face);
+		box-shadow: var(--panel-shadow);
+	}
+	/* What changes per game is typed on a card slid into a holder. Engraving is only for what never changes. */
+	.card {
+		padding: 3px 9px;
+		border-radius: 1px;
+		color: var(--card-ink);
+		font-family: var(--tty);
+		text-shadow: none;
+		background: var(--card-face);
+		box-shadow: var(--card-frame);
+	}
+	.card span,
+	.card strong {
+		color: inherit;
+		font-family: inherit;
+		text-shadow: none;
+	}
+	.dial-head .card {
+		flex: 1;
+		min-width: 0;
+	}
+	.dial-head .card strong,
+	.dial-head .card span {
+		color: var(--card-ink);
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+	}
+	.dial-head .card strong {
+		font-size: 17px;
+		letter-spacing: 0.01em;
+	}
+	.dial-head .card span {
+		font-size: 12px;
+		letter-spacing: 0;
+	}
+	.legend {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		width: 100%;
+		margin-top: 1px;
+		padding: 3px 1px;
+		border-radius: 1px;
+		font-family: var(--tty);
+	}
+	.legend .nm,
+	.legend .yd {
+		font-family: inherit;
+		letter-spacing: 0;
+	}
+	.legend .nm {
+		font-size: 13px;
+		font-weight: 700;
+	}
+	.legend .yd {
+		font-size: 11px;
+	}
+	/* SAGE's warhead keys take a typed insert under a clear cap, which glows when the key is lit. */
+	[data-theme='sage'] .legend {
+		color: #24231e;
+		text-shadow: none;
+		background: linear-gradient(180deg, #efe8d0, #dcd3b5);
+		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
+	}
+	[data-theme='sage'] .warhead.lit .legend {
+		color: #3a0a02;
+		background: radial-gradient(ellipse at 50% 40%, #ffe3d2, #ffb38f);
+	}
+	/* Units sit in the readout's window too, since they change with the value. */
+	.slider small {
+		padding: 1px 3px;
+		color: var(--well-ink);
+		background: var(--well-face);
+		box-shadow: var(--well-shadow);
+		border-radius: 1px;
 	}
 	.rack h2,
 	.engrave,
@@ -1178,17 +1331,28 @@
 	}
 	.keys {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-		gap: 7px;
+		grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+		gap: 9px 8px;
+		padding-bottom: 6px;
 	}
 	.warhead {
 		position: relative;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		height: 60px;
-		padding: 4px 3px;
+		height: 64px;
+		padding: 3px 3px;
 		letter-spacing: 0.04em;
+	}
+	.keys.dense .warhead {
+		height: 52px;
+	}
+	.keys.dense .warhead .no {
+		position: absolute;
+		top: 1px;
+		left: 3px;
+		z-index: 1;
+		font-size: 8px;
 	}
 	.warhead .no {
 		align-self: flex-start;
@@ -1235,9 +1399,9 @@
 		display: grid;
 		grid-template-columns: 66px minmax(0, 1fr) 166px;
 		align-items: center;
-		gap: 8px;
-		height: 34px;
-		margin-top: 4px;
+		gap: 10px;
+		height: 44px;
+		margin-top: 5px;
 		font-size: 14px;
 		letter-spacing: 0.1em;
 	}
@@ -1249,25 +1413,70 @@
 		font-size: 23px;
 	}
 	.slider small {
-		width: 50px;
+		width: 40px;
 		font: 12px var(--engraved);
 		letter-spacing: 0.04em;
 	}
 	.slider .num {
 		font-size: 15px;
 	}
+	/* A long slot cut in the panel with a scale beneath it, and a heavy ridged slider block riding in it. */
 	.slider input {
+		appearance: none;
 		width: 100%;
-		accent-color: var(--accent);
+		height: 44px;
+		margin: 0;
+		cursor: grab;
+		background: repeating-linear-gradient(90deg, var(--tick) 0 1px, transparent 1px calc(10% - 0.1px)) 0 100% / 100% 6px no-repeat;
+	}
+	.slider input:active {
+		cursor: grabbing;
+	}
+	.slider input::-webkit-slider-runnable-track {
+		height: 14px;
+		border-radius: 3px;
+		background: var(--track-face);
+		box-shadow: var(--track-edge);
+	}
+	.slider input::-moz-range-track {
+		height: 14px;
+		border-radius: 3px;
+		background: var(--track-face);
+		box-shadow: var(--track-edge);
+	}
+	.slider input::-webkit-slider-thumb {
+		appearance: none;
+		width: 30px;
+		height: 36px;
+		margin-top: -11px;
+		border: var(--thumb-edge);
+		border-radius: 3px;
+		background: var(--thumb-face);
+		box-shadow: var(--thumb-shadow);
+	}
+	.slider input::-moz-range-thumb {
+		box-sizing: border-box;
+		width: 30px;
+		height: 36px;
+		border: var(--thumb-edge);
+		border-radius: 3px;
+		background: var(--thumb-face);
+		box-shadow: var(--thumb-shadow);
+	}
+	.slider input:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
 	}
 	.slider input:disabled {
-		opacity: 0.35;
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 	.presets {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
-		margin-top: 9px;
+		gap: 7px;
+		margin-top: 12px;
+		padding-bottom: 6px;
 	}
 
 	/* The five-inch tabular tube that sits beside SAGE's situation display. */
@@ -1664,6 +1873,13 @@
 		}
 		.slider {
 			grid-template-columns: 58px minmax(0, 1fr) 150px;
+		}
+		.rack,
+		.dials,
+		.commit,
+		.actions {
+			padding: 8px 12px;
+			background: var(--panel-face);
 		}
 		.switches .key {
 			min-width: 0;

@@ -6,6 +6,7 @@
 	import { WEAPON_FACTS } from '#lib/game/weaponfacts.ts';
 	import { fissionFractionAt, hasDial } from '#lib/game/weapons.ts';
 	import DistanceBars from './DistanceBars.svelte';
+	import ExoCoupling from './ExoCoupling.svelte';
 	import ExoView from './ExoView.svelte';
 	import FalloutPlan from './FalloutPlan.svelte';
 	import type { Fmt } from './fmt.ts';
@@ -228,6 +229,10 @@
 			<h3>{W.sectionExo}</h3>
 			<ExoView {r} {F} labels={W.exoLabels} />
 			<p>{W.exoBody}</p>
+			<p>{W.exoCoupling(F.pct(r.fissionShare))}</p>
+			<ExoCoupling {r} {F} labels={W.exoChart} />
+			<p><b>{r.rings.thermal > 0 ? W.exoBurns(F.km(r.rings.thermal)) : W.exoNoBurns(r.exoHeat[0].cal.toPrecision(2), r.burnCal.toFixed(0))}</b></p>
+			<p>{W.exoLimit}</p>
 			<p>{W.exoStarfish}</p>
 			<p><b>{W.exoPeople(F.count(r.empPop))}</b></p>
 		</section>

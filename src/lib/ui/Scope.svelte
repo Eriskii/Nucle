@@ -7,6 +7,7 @@
 	import { toBurst, type Placement, type Scenario, type Zone } from '#lib/game/scenario.ts';
 	import type { PopGrid } from '#lib/game/sim.ts';
 	import type { TheatreKind } from '#lib/game/theatres.ts';
+	import Instruments from './Instruments.svelte';
 	import type { Theme } from './themes.ts';
 	import { BUILDING_TILE_Z, MAX_TILE_Z, MIN_TILE_Z, tileBudget, TileStore, tileZoomFor, type TileLayer } from './tiles.ts';
 
@@ -1300,6 +1301,12 @@
 		{/if}
 	</div>
 	<div class="pad">
+		<Instruments
+			{lang}
+			totalKt={placements.reduce((sum, p) => sum + p.kt, 0)}
+			windBearing={scenario.weather.windBearing}
+			windKmh={scenario.weather.windKmh}
+		/>
 		<div class="zooms">
 			<button
 				class="padkey"
@@ -1332,15 +1339,16 @@
 			{/each}
 			<button class="padkey home" style:grid-area="c" aria-label="Recenter map" onclick={recenter}>●</button>
 		</div>
+		<div class="credit">
+			<span>{lang === 'ru' ? 'ДАННЫЕ КАРТЫ' : 'MAP DATA'}</span>
+			<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OPENSTREETMAP</a>
+			<a href="https://openfreemap.org" target="_blank" rel="noreferrer">OPENFREEMAP</a>
+			<a href="https://www.openmaptiles.org/" target="_blank" rel="noreferrer">© OPENMAPTILES</a>
+		</div>
 	</div>
 </div>
 <div class="readout">
 	<span class="coords">{readout}</span>
-	<span class="credit">
-		<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OPENSTREETMAP</a>
-		<a href="https://openfreemap.org" target="_blank" rel="noreferrer">OPENFREEMAP</a>
-		<a href="https://www.openmaptiles.org/" target="_blank" rel="noreferrer">© OPENMAPTILES</a>
-	</span>
 	<output>{zoom >= 10 ? Math.round(zoom) : Math.round(zoom * 10) / 10}X</output>
 </div>
 
@@ -1355,7 +1363,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 16px;
+		gap: 14px;
 	}
 	.zooms {
 		display: flex;
@@ -1395,8 +1403,8 @@
 		filter: brightness(1.12);
 	}
 	.padkey:active {
-		transform: translateY(2px);
-		box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+		transform: translateY(4px);
+		box-shadow: var(--key-pressed);
 	}
 	.home {
 		font-size: 10px;
@@ -1413,6 +1421,18 @@
 		}
 		.zooms {
 			flex-direction: row;
+		}
+		.pad {
+			flex-wrap: wrap;
+		}
+		.pad .credit {
+			flex-direction: row;
+			flex-wrap: wrap;
+			justify-content: center;
+			gap: 0 10px;
+			width: 100%;
+			padding: 4px 8px;
+			background: var(--gauge-case);
 		}
 	}
 	.tube {
@@ -1456,33 +1476,51 @@
 		pointer-events: none;
 		background: var(--tube-glass);
 	}
+	/* Coordinates and zoom change as you play, so they sit in a lit window rather than on the metal. */
 	.readout {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
 		justify-content: space-between;
 		gap: 4px 16px;
-		margin-top: 8px;
+		margin-top: 10px;
+		padding: 4px 10px;
+		border-radius: 2px;
 		font: 13px var(--crt);
 		letter-spacing: 0.08em;
-		color: var(--readout);
+		color: var(--well-ink);
+		background: var(--well-face);
+		box-shadow: var(--well-shadow);
 	}
 	.coords {
 		text-shadow: var(--readout-glow);
 	}
+	/* A small riveted data plate, as on any piece of equipment. Its words never change. */
 	.credit {
 		display: flex;
-		flex-wrap: wrap;
-		gap: 0 10px;
-		font-size: 11px;
+		flex-direction: column;
+		gap: 1px;
+		width: 112px;
+		padding: 5px 7px 5px 11px;
+		border: 1px solid var(--gauge-rim);
+		border-radius: 2px;
+		font: 8.5px/1.35 var(--crt);
+		letter-spacing: 0.02em;
+		color: var(--gauge-plate-ink);
+		background:
+			radial-gradient(circle 1.6px at 5px 8px, var(--gauge-rim) 99%, transparent),
+			radial-gradient(circle 1.6px at 5px calc(100% - 8px), var(--gauge-rim) 99%, transparent),
+			var(--gauge-case);
+		box-shadow: 0 1px 2px var(--gauge-drop);
+	}
+	.credit span {
+		font-weight: 700;
 	}
 	.credit a {
-		color: var(--readout);
-		opacity: 0.85;
+		color: inherit;
 		text-decoration: none;
 	}
 	.credit a:hover {
-		color: var(--flash);
 		text-decoration: underline;
 	}
 </style>

@@ -39,6 +39,7 @@ export const WEAPON_FACTS: Record<string, WeaponFacts> = {
 	ss18: { drawn: 'missile', outline: 'missile', lengthM: 32.6, diameterM: 3.05, massKg: 209600, year: '1975', source: `${WP}R-36_(missile)`, confidence: 'secondary' },
 	pos: { outline: 'torpedo', lengthM: 20, diameterM: 1.8, massKg: 100000, massNote: 'approx', year: '2015', source: `${WP}Poseidon_(unmanned_underwater_vehicle)`, confidence: 'uncertain' },
 	cob: { year: '1950', source: `${WP}Cobalt_bomb`, confidence: 'secondary' },
+	ripple: { drawn: 'rv', outline: 'cone', lengthM: 4.3, diameterM: 2.5, massKg: 2720, massNote: 'approx', year: '1962', source: 'https://doi.org/10.1162/jcws_a_01011', confidence: 'uncertain' },
 	tsar: { outline: 'heavy', lengthM: 8, diameterM: 2.1, massKg: 27000, year: '1961', source: 'https://nuclearweaponarchive.org/Russia/TsarBomba.html', confidence: 'published' },
 	tsar2: { outline: 'heavy', lengthM: 8, diameterM: 2.1, massKg: 27000, year: '1961', source: 'https://nuclearweaponarchive.org/Russia/TsarBomba.html', confidence: 'published' },
 	gnomon: { year: '1954', source: `${WP}Sundial_(weapon)`, confidence: 'secondary' },

@@ -19,6 +19,22 @@ const near = (got: number, want: number, frac: number) => {
 };
 
 describe('post-strike report', () => {
+	it('counts heat deaths from a gigaton burst at 100 km', () => {
+		const data = load(theatreIdForDay(165));
+		const { scenario: locked, sim } = generate(165, data);
+		const scenario = { ...locked, hobLock: undefined };
+		const slot = scenario.arsenal.findIndex((w) => w.id === 'gnomon');
+		const big = data.grid.pop.indexOf(Math.max(...data.grid.pop));
+		const plan = [{ slot, lat: data.grid.lat[big], lon: data.grid.lon[big], kt: 1000000, hobM: 100000 }];
+		const d = analyze(scenario, sim, evaluate(scenario, sim, plan), data.meta);
+		const b = d.bursts[0];
+		expect(b.exo).toBe(true);
+		expect(b.exoHeat[0].cal).toBeGreaterThan(b.burnCal);
+		expect(b.rings.thermal).toBeGreaterThan(0);
+		expect(b.causes.burns).toBeGreaterThan(0);
+		expect(b.causes.blast + b.causes.radiation + b.causes.fallout).toBeLessThan(b.causes.burns * 1e-3);
+	});
+
 	for (const day of [1, 2, 4, 7, 20, 25, 33]) {
 		it(`splits deaths without losing or inventing any, day ${day}`, () => {
 			const data = load(theatreIdForDay(day));

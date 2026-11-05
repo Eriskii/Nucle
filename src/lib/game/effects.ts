@@ -20,7 +20,7 @@ export interface Weather {
 }
 
 export const EARTH_KM = 6371;
-/** Above this height there is no blast, heat or fallout at ground level. */
+/** Above this height there is no blast, prompt radiation or fallout at ground level. Heat can still arrive, see layerExposure. */
 export const EXO_HEIGHT_M = 30000;
 
 const KM_PER_MI = 1.609344;
@@ -320,17 +320,59 @@ function transmittance(slantMi: number, hobMi: number, visMi: number): number {
 	return (1 + 1.9 * s) * Math.exp(-2.9 * s);
 }
 
-/** Exposure at a slant range in cal/cm². G&D eq. 7.96.4: Q = 3.07 f W T / D², D in miles. */
+// High bursts. X-rays and fast neutrons leave the device and stop in thin air, heating it, and the hot air radiates
+// heat to the ground. One fixed layer stands in for both, and the share is an estimate. See docs/EFFECTS.md.
+export const LAYER_KM = 80;
+export const RERADIATED_DOWN = 0.2;
+const LAYER_RINGS = 28;
+const LAYER_SPOKES = 10;
+const CAL_PER_KT_KM2 = 1e12 / 1e10;
+/** Below this the G&D point source holds. By LAYER_KM it has handed over to the layer. */
+const POINT_SOURCE_KM = 30;
+
+export const horizonKm = (altKm: number) => EARTH_KM * Math.acos(EARTH_KM / (EARTH_KM + altKm));
+
+/** cal/cm² at ground range r from the heated layer, before air and cloud. The rings are log spaced out to what the burst can see. */
+export function layerExposure(kt: number, hKm: number, r: number): number {
+	const d = Math.max(hKm - LAYER_KM, POINT_SOURCE_KM);
+	const edge = horizonKm(hKm);
+	let sum = 0;
+	let inner = 0;
+	for (let i = 1; i <= LAYER_RINGS; i++) {
+		const outer = d * 0.05 * (Math.pow(edge / (d * 0.05) + 1, i / LAYER_RINGS) - 1);
+		const rho = (inner + outer) / 2;
+		const area = (Math.PI * (outer * outer - inner * inner)) / LAYER_SPOKES;
+		const s2 = rho * rho + d * d;
+		// Fluence reaching this ring from the burst, then a Lambertian emitter down to the ground point.
+		const emitted = (RERADIATED_DOWN * kt * CAL_PER_KT_KM2 * (d / Math.sqrt(s2))) / (4 * Math.PI * s2);
+		for (let j = 0; j < LAYER_SPOKES; j++) {
+			const a = ((j + 0.5) / LAYER_SPOKES) * Math.PI * 2;
+			const l2 = rho * rho + r * r - 2 * rho * r * Math.cos(a) + LAYER_KM * LAYER_KM;
+			sum += (emitted * area * (LAYER_KM * LAYER_KM)) / (Math.PI * l2 * l2);
+		}
+		inner = outer;
+	}
+	return sum;
+}
+
+/** Exposure at a slant range in cal/cm². G&D eq. 7.96.4: Q = 3.07 f W T / D², D in miles. Blends to the heated layer above 30 km. */
 export function thermalExposure(kt: number, hobM: number, slantMi: number, weather: Weather): number {
 	const sky = SKY[weather.precip];
 	const T = transmittance(slantMi, hobM / (KM_PER_MI * 1000), sky.visMi);
-	return (3.07 * thermalPartition(kt, hobM) * kt * T * cloudFactor(sky, hobM)) / (slantMi * slantMi);
+	const clouds = cloudFactor(sky, hobM);
+	const point = (3.07 * thermalPartition(kt, hobM) * kt * T * clouds) / (slantMi * slantMi);
+	const hKm = hobM / 1000;
+	const layer = clamp((hKm - POINT_SOURCE_KM) / (LAYER_KM - POINT_SOURCE_KM), 0, 1);
+	if (layer <= 0) return point;
+	const r = groundRange(slantMi * KM_PER_MI, hobM);
+	const fromLayer = Math.hypot(r, LAYER_KM) / KM_PER_MI;
+	const layerT = transmittance(fromLayer, LAYER_KM / KM_PER_MI, sky.visMi);
+	return (1 - layer) * point + layer * layerExposure(kt, hKm, r) * layerT * clouds;
 }
 
 /** Ground range of third-degree burns on exposed skin. */
 export function thermalKm(kt: number, hobM: number, weather: Weather): number {
-	if (hobM >= EXO_HEIGHT_M) return 0;
-	const need = lerpTable(THIRD_DEGREE, Math.log10(kt));
+	const need = burnThreshold(kt);
 	const hMi = hobM / (KM_PER_MI * 1000);
 	let lo = Math.max(hMi, 1e-3);
 	if (thermalExposure(kt, hobM, lo, weather) < need) return 0;
@@ -341,7 +383,8 @@ export function thermalKm(kt: number, hobM: number, weather: Weather): number {
 		if (thermalExposure(kt, hobM, mid, weather) >= need) lo = mid;
 		else hi = mid;
 	}
-	return groundRange(lo * KM_PER_MI, hobM);
+	const range = groundRange(lo * KM_PER_MI, hobM);
+	return hobM >= EXO_HEIGHT_M ? Math.min(range, horizonKm(hobM / 1000)) : range;
 }
 
 // ---- Prompt radiation -----------------------------------------------------------------------
@@ -991,6 +1034,6 @@ function traceContour(field: FalloutField, rate: number): PlumeBand {
 export function empKm(kt: number, hobM: number): number {
 	if (hobM < EXO_HEIGHT_M) return 0;
 	const h = hobM / 1000;
-	const horizon = EARTH_KM * Math.acos(EARTH_KM / (EARTH_KM + h));
+	const horizon = horizonKm(h);
 	return horizon * Math.min(1, 0.35 + 0.18 * Math.log10(Math.max(kt, 1)));
 }

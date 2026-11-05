@@ -605,16 +605,23 @@
 	}
 	.debrief :global(.dkey) {
 		appearance: none;
-		padding: 5px 11px;
+		min-height: 38px;
+		margin-bottom: 4px;
+		padding: 6px 13px;
 		border: 1px solid var(--d-dim);
-		border-radius: 2px;
-		background: var(--d-key);
+		border-radius: 3px;
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.14)), var(--d-key);
 		color: var(--d-fg);
 		font: 13px var(--d-mono);
 		cursor: pointer;
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.2), 0 3px 0 var(--d-dim), 0 5px 5px rgba(0, 0, 0, 0.3);
 	}
 	.debrief :global(.dkey:hover:not(:disabled)) {
 		border-color: var(--d-fg);
+	}
+	.debrief :global(.dkey:active:not(:disabled)) {
+		transform: translateY(3px);
+		box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45);
 	}
 	.debrief :global(.dkey:disabled) {
 		opacity: 0.4;

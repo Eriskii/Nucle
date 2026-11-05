@@ -48,6 +48,7 @@ export const WEAPONS: Weapon[] = [
 	{ id: 'ss18', name: 'R-36M SATAN', note: 'HEAVY ICBM SINGLE WARHEAD', minKt: 18000, maxKt: 25000, fission: HALF, tiers: ['region', 'world'] },
 	{ id: 'pos', name: 'STATUS-6 POSEIDON', note: 'COASTAL TORPEDO', minKt: 2000, maxKt: 2000, fission: HALF, salted: 2, surfaceOnly: true, tiers: ['region'] },
 	{ id: 'cob', name: 'COBALT SALTED DEVICE', note: 'THEORETICAL, SZILARD 1950', minKt: 1000, maxKt: 5000, fission: HALF, salted: 5, theoretical: true, tiers: ['city', 'region', 'world'] },
+	{ id: 'ripple', name: 'RIPPLE TITAN II', note: 'UNBUILT CLEAN WARHEAD, 1962', minKt: 35000, maxKt: 35000, fission: [[1, 0.001]], theoretical: true, tiers: ['region', 'world'] },
 	{ id: 'tsar', name: 'TSAR BOMBA', note: 'NOVAYA ZEMLYA 1961', minKt: 50000, maxKt: 50000, fission: [[1, 0.03]], tiers: ['region', 'world'] },
 	{ id: 'tsar2', name: 'TSAR BOMBA FULL', note: 'AS DESIGNED, U-238 TAMPER', minKt: 100000, maxKt: 100000, fission: HALF, theoretical: true, tiers: ['region', 'world'] },
 	{ id: 'gnomon', name: 'GNOMON', note: 'TELLER, UNBUILT 1954', minKt: 1000000, maxKt: 1000000, fission: HALF, theoretical: true, tiers: ['world'] },

@@ -127,6 +127,30 @@ G&D §9.94 says H+1 rates over about 5000 rad/h are unlikely, while Miller's rid
 
 Footprint is the horizon arc from burst height, consistent with Sublette's 2500 km at 500 km (model 2445). The factor of 0.35 to 1 by yield is an estimate carried over from the old code. No published fit for it was found. Bursts above 30 km only, which also matches Sublette's stated threshold.
 
+## Heat from high bursts
+
+Above 30 km there's no table to read: G&D Table 7.88 stops at 100,000 ft. X-rays and neutrons leave the device and stop in thin air, and the heated air radiates. One mean free path straight down in a standard atmosphere (my calculation, from NIST XCOM for air and a nitrogen cross-section of about 1.5 b at 14 MeV):
+
+| Radiation | Column to stop it | Height |
+|---|---|---|
+| 1 keV X-ray | about 3×10⁻⁴ g/cm² | about 100 km |
+| 10 keV X-ray | about 0.2 g/cm² | about 60 km |
+| 14 MeV neutron | about 16 g/cm² | about 30 km |
+
+**Model (estimate).** `layerExposure` spreads the yield over a single layer at 80 km as seen from the burst, then radiates it to the ground from a Lambertian surface, with 20% of the yield going down. The share is an order-of-magnitude choice with no published figure behind it. Fission and fusion weapons are treated alike, because the split of output between X-rays and neutrons isn't public and both end as hot air. The layer blends in between 30 and 80 km so nothing jumps at the line.
+
+**Anchors.** Starfish Prime (1.4 Mt, 400 km) gets 0.01 cal/cm², consistent with no reported ground burns. No published ground fluence was available to fit against. Only about 1 Gt and up reaches the burn threshold.
+
+**Not modelled.** Any shock from the heated air, which is why ground blast stays zero above 30 km.
+
+## Absurd yields
+
+Blast, heat and fallout at Gnomon and Sundial yields are extrapolations from fits built on tests of 15 Mt and below. At those sizes the fireball outgrows the atmosphere's scale height, which cube-root scaling doesn't know about. Treat them as rough. Nothing in the game comes from hydrodynamic simulation.
+
+## Ripple on Titan II
+
+A what-if, not a real weapon. Grams (*Journal of Cold War Studies* 23:2, 2021) reports Housatonic at 9.96 Mt, 7,139 lb, an estimated 99.9% clean, a 1962 request for maximum yield in about 6,000 lb for the Titan II, and a predicted 30 to 40 Mt for the fully fuelled device. The game uses 35 Mt at a 0.1% fission share. The size drawn is the Titan II's reentry vehicle. Its shape is a guess.
+
 ## Precipitation handling, summary
 
 CLEAR and HAZE don't change fallout. OVERCAST doesn't either, since no rain falls out of it in this model. RAIN and SNOW scavenge as above, which also gives air bursts a small plume in the rain. The old `THERMAL_FACTOR` table is gone, replaced by visibility and cloud geometry.

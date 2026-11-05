@@ -122,6 +122,17 @@ describe('thermal and prompt radiation against published figures', () => {
 		near(thermalKm(20000, optimumHobM(20000), clear), 39, 0.25); // model -24%
 	});
 
+	it('lets heat reach the ground from high bursts only at absurd yields', () => {
+		expect(thermalKm(1400, 400000, clear)).toBe(0); // Starfish Prime
+		expect(thermalKm(35000, 100000, clear)).toBe(0);
+		expect(thermalKm(1000000, 100000, clear)).toBeGreaterThan(100);
+		expect(thermalKm(10000000, 100000, clear)).toBeGreaterThan(thermalKm(1000000, 100000, clear));
+	});
+
+	it('has no jump in heat across the 30 km line', () => {
+		near(thermalKm(15000, 29000, clear), thermalKm(15000, 31000, clear), 0.1);
+	});
+
 	it('cuts surface bursts to the effective partition of G&D Table 7.101', () => {
 		near(thermalExposure(1000, 0, 5, clear) / thermalExposure(1000, 1000, 5, clear), 0.18 / 0.35, 0.01);
 	});

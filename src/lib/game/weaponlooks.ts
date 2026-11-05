@@ -115,6 +115,10 @@ export const LOOKS: Record<string, Look> = {
 		bands: [paint(GREY, 0.3, 0.45), paint([0.17, 0.045, 0.025], 0.36, 0.45), paint(GREY, 0.85, 0.5), metal(GREY, 1, 0.5)],
 		fins: { kind: 'cruciform', start: 0.9, span: 0.75, thick: 0.015 }
 	},
+	ripple: {
+		profile: [[0, 0.1], [0.02, 0.17], [0.7, 0.42], [0.88, 0.5], [1, 0.5]],
+		bands: [paint(CARBON, 0.05, 0.42), paint(CARBON, 0.88, 0.6), paint(GREY, 1, 0.5)]
+	},
 	tsar: {
 		profile: [[0, 0.03], [0.018, 0.2], [0.07, 0.38], [0.2, 0.5], [0.68, 0.5], [0.86, 0.42], [1, 0.3]],
 		bands: [paint(BLACK, 0.18, 0.5), paint([0.18, 0.19, 0.2], 0.68, 0.5), paint(BLACK, 1, 0.5)],

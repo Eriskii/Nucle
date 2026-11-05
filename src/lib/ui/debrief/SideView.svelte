@@ -620,8 +620,43 @@
 		font: 13px var(--d-mono);
 	}
 	.scrub input {
+		appearance: none;
 		width: 100%;
-		accent-color: var(--d-accent);
+		height: 38px;
+		margin: 0;
+		background: none;
+		cursor: grab;
+	}
+	.scrub input::-webkit-slider-runnable-track {
+		height: 12px;
+		border-radius: 3px;
+		background: var(--d-rule);
+		box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
+	}
+	.scrub input::-moz-range-track {
+		height: 12px;
+		border-radius: 3px;
+		background: var(--d-rule);
+		box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
+	}
+	.scrub input::-webkit-slider-thumb {
+		appearance: none;
+		width: 24px;
+		height: 32px;
+		margin-top: -10px;
+		border: 1px solid var(--d-fg);
+		border-radius: 3px;
+		background: linear-gradient(90deg, transparent 44%, var(--d-accent) 44% 56%, transparent 56%), linear-gradient(180deg, var(--d-key), var(--d-rule));
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 0 var(--d-dim), 0 4px 5px rgba(0, 0, 0, 0.5);
+	}
+	.scrub input::-moz-range-thumb {
+		box-sizing: border-box;
+		width: 24px;
+		height: 32px;
+		border: 1px solid var(--d-fg);
+		border-radius: 3px;
+		background: linear-gradient(90deg, transparent 44%, var(--d-accent) 44% 56%, transparent 56%), linear-gradient(180deg, var(--d-key), var(--d-rule));
+		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 0 var(--d-dim), 0 4px 5px rgba(0, 0, 0, 0.5);
 	}
 	.scrub output {
 		font-weight: 700;

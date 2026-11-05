@@ -70,7 +70,7 @@ standing  = (1 - blast structure loss) × (1 - fire)
 
 Each value is averaged over four points across a cell's width, so the score changes smoothly as you drag a warhead and doesn't jump at cell edges.
 
-**Heights.** At or above 30 km there is no blast, heat, prompt radiation or fallout, only EMP.
+**Heights.** At or above 30 km there is no blast, prompt radiation or fallout. EMP applies, and heat can still reach the ground: X-rays and neutrons stop in thin air and heat it, and the hot air radiates down. Above 30 km the point source hands over to a single layer at 80 km that sends 20% of the yield toward the ground (both **estimates**). Burns from this need yields around 1 Gt: Starfish Prime gets 0.01 cal/cm², and 50 Mt at 100 km gets about 9, under the burn threshold.
 
 ## Fallout
 

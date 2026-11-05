@@ -7,6 +7,8 @@ import {
 	effectiveWinds,
 	EXO_HEIGHT_M,
 	empKm,
+	thermalExposure,
+	type Weather,
 	falloutBands,
 	falloutField,
 	fatalityFromFallout,
@@ -95,6 +97,8 @@ export interface BurstReport {
 	rainout: number;
 	empKm: number;
 	empPop: number;
+	/** Heat on the ground by range for a high burst, and the exposure that burns. */
+	exoHeat: { km: number; cal: number }[];
 	shock: ShockPoint[];
 	/** This weapon's share of the plan's deaths, with overlaps split. */
 	deaths: number;
@@ -242,6 +246,16 @@ function directTable(b: Burst, sim: Sim) {
 		}
 		return { blast: blast / offsets.length, burns: burns / offsets.length, radiation: rad / offsets.length };
 	};
+}
+
+function exoHeatCurve(kt: number, hobM: number, weather: Weather) {
+	const h = hobM / 1000;
+	const out: { km: number; cal: number }[] = [];
+	for (let i = 0; i <= 40; i++) {
+		const km = (i / 40) * 1600;
+		out.push({ km, cal: thermalExposure(kt, hobM, Math.hypot(km, h) / 1.609344, weather) });
+	}
+	return out;
 }
 
 export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMeta): DebriefData {
@@ -441,6 +455,7 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 			rainout: rainoutShare(b.kt, weather.precip),
 			empKm: empKm(b.kt, b.hobM),
 			empPop,
+			exoHeat: exo ? exoHeatCurve(b.kt, b.hobM, weather) : [],
 			shock,
 			deaths,
 			causes,

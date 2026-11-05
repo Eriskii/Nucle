@@ -41,6 +41,7 @@ export const DELIVERY: Record<string, Delivery> = {
 	ss18: { kind: 'reentry', carrier: 'R-36M', startM: 100000, speedMs: 6700, diveDeg: 25 },
 	pos: { kind: 'torpedo', carrier: 'Status-6', startM: 0, speedMs: 36, diveDeg: 0, illustrative: true },
 	cob: { kind: 'unbuilt', startM: 0, speedMs: 0, diveDeg: 0 },
+	ripple: { kind: 'reentry', carrier: 'Titan II', startM: 100000, speedMs: 6700, diveDeg: 25 },
 	tsar: { kind: 'retarded', carrier: 'Tu-95', startM: 10500, speedMs: 200, diveDeg: 0, terminalMs: 35 },
 	tsar2: { kind: 'retarded', carrier: 'Tu-95', startM: 10500, speedMs: 200, diveDeg: 0, terminalMs: 35 },
 	gnomon: { kind: 'unbuilt', startM: 0, speedMs: 0, diveDeg: 0 },
