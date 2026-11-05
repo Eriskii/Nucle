@@ -34,6 +34,8 @@ Streets and buildings stream at runtime as vector tiles from [OpenFreeMap](https
 using the [OpenMapTiles](https://www.openmaptiles.org/) schema, with data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
 They're for display only. Scoring uses the population and built-up rasters.
 
+Fonts: Routed Gothic and Open GOST (SIL OFL 1.1, in `src/lib/assets/fonts`), the rest through Fontsource.
+
 All audio is synthesized in the browser by `src/lib/ui/sound.ts`, with no sound files.
 
-Weapon effects are simplified from public figures in Glasstone & Dolan and OTA 1979. It's a game model, not a hydrocode.
+Weapon effects use published fits: Brode's overpressure fit, Miller's fallout scaling system, and thermal and radiation figures from Glasstone & Dolan and OTA 1979. It's a game model, not a hydrocode. [docs/EFFECTS.md](docs/EFFECTS.md) gives methods, sources, and how far the model sits from each published figure.

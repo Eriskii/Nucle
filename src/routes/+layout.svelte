@@ -1,14 +1,14 @@
 <script lang="ts">
 	import favicon from '#lib/assets/favicon.svg';
-	import '@fontsource/share-tech-mono/400.css';
-	import '@fontsource/barlow-condensed/500.css';
-	import '@fontsource/barlow-condensed/600.css';
+	import '#lib/assets/fonts/fonts.css';
+	import '@fontsource/architects-daughter/400.css';
+	import '@fontsource/overpass-mono/400.css';
+	import '@fontsource/overpass-mono/700.css';
+	import '@fontsource/rock-salt/400.css';
 	import '@fontsource/courier-prime/400.css';
 	import '@fontsource/courier-prime/700.css';
 	import '@fontsource/nixie-one/400.css';
 	import '@fontsource/pt-mono/400.css';
-	import '@fontsource/pt-sans-narrow/400.css';
-	import '@fontsource/pt-sans-narrow/700.css';
 	import '@fontsource/reenie-beanie/400.css';
 	import type { LayoutProps } from './$types';
 
@@ -38,9 +38,9 @@
 		--alert: #ff6a45;
 		--paper: #e7dfc4;
 		--ink: #24231e;
-		--engraved: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-		--crt: 'Share Tech Mono', ui-monospace, monospace;
-		--tty: 'Courier Prime', 'Courier New', monospace;
+		--engraved: 'Routed Gothic', 'Arial Narrow', sans-serif;
+		--crt: 'Overpass Mono', ui-monospace, monospace;
+		--tty: 'Overpass Mono', 'Courier New', monospace;
 	}
 	:global(html, body) {
 		margin: 0;

@@ -59,7 +59,7 @@
 	import { THEME_ORDER, THEMES, type ThemeId } from '#lib/ui/themes.ts';
 
 	const PAPER_TERMS = {
-		console: 'TARGET PLANNING STAFF · CHART WORKSHEET',
+		console: 'TARGET PLANNING WORKSHEET',
 		rack: 'WARHEAD ALLOCATION',
 		dataSelect: 'OVERLAYS',
 		digital: 'EFFECTS TABLE, KM',
@@ -380,23 +380,26 @@
 					<span>{scenario.date} · {theatreName}</span>
 				</div>
 				<div class="tally">
-					<span>{L.streak} {@render number(`${stats.streak}`)}</span>
-					<span>{L.played} {@render number(`${stats.played}`)}</span>
-					<span>{L.best} {@render number(`${stats.best}`)}</span>
+					<span>{L.streak} {@render number(`${stats.streak}`, 3)}</span>
+					<span>{L.played} {@render number(`${stats.played}`, 3)}</span>
+					<span>{L.best} {@render number(`${stats.best}`, 3)}</span>
 					<button class="key small" onclick={() => (showOrders = true)}>{L.orders}</button>
 				</div>
 				<div class="selector" role="group" aria-label="Console theme">
+					<!-- The first slot is held open so the other keys never move between themes. -->
+					{#if themeId === 'pvo'}
+						<button class="key small" class:armed={translated} aria-pressed={translated} onclick={() => (translated = !translated)}>
+							{UI.ru.translate}
+						</button>
+					{:else}
+						<span></span>
+					{/if}
 					<button class="key small" class:armed={!soundOff} aria-pressed={!soundOff} onclick={toggleSound}>{L.sound}</button>
 					{#each THEME_ORDER as id (id)}
 						<button class="key small" class:lit={themeId === id} aria-pressed={themeId === id} onclick={() => pickTheme(id)}>
 							{THEMES[id].name}
 						</button>
 					{/each}
-					{#if themeId === 'pvo'}
-						<button class="key small" class:armed={translated} aria-pressed={translated} onclick={() => (translated = !translated)}>
-							{UI.ru.translate}
-						</button>
-					{/if}
 				</div>
 			</header>
 
@@ -575,7 +578,7 @@
 										value={ktToSlider(selectedWeapon, selectedBurst.kt)}
 										oninput={(e) => setKt(+e.currentTarget.value)}
 									/>
-									<output>{@render number(yieldValue)}<small>{yieldUnit}</small></output>
+									<output>{@render number(yieldValue, 4)}<small>{yieldUnit}</small></output>
 								</label>
 								<label class="slider">
 									<span>{L.height}</span>
@@ -587,7 +590,7 @@
 										value={hobToSlider(hobFor(scenario, selectedWeapon, selectedBurst.kt, selectedPlacement.hobM))}
 										oninput={(e) => setHob(hobFromSlider(+e.currentTarget.value))}
 									/>
-									<output>{@render number(hobValue)}<small>{hobUnit}</small></output>
+									<output>{@render number(hobValue, 4)}<small>{hobUnit}</small></output>
 								</label>
 								{#if !selectedWeapon.surfaceOnly && !scenario.hobLock}
 									<div class="presets">
@@ -601,10 +604,10 @@
 									<div class="digital">
 										<h3>{L.digital}</h3>
 										<dl>
-											<div><dt>{L.psi20}</dt><dd>{@render number(km(selectedRings.psi20))}</dd></div>
-											<div><dt>{L.psi5}</dt><dd>{@render number(km(selectedRings.psi5))}</dd></div>
-											<div><dt>{L.psi1}</dt><dd>{@render number(km(selectedRings.psi1))}</dd></div>
-											<div><dt>{L.burns}</dt><dd>{@render number(km(selectedRings.thermal))}</dd></div>
+											<div><dt>{L.psi20}</dt><dd>{@render number(km(selectedRings.psi20), 4)}</dd></div>
+											<div><dt>{L.psi5}</dt><dd>{@render number(km(selectedRings.psi5), 4)}</dd></div>
+											<div><dt>{L.psi1}</dt><dd>{@render number(km(selectedRings.psi1), 4)}</dd></div>
+											<div><dt>{L.burns}</dt><dd>{@render number(km(selectedRings.thermal), 4)}</dd></div>
 										</dl>
 									</div>
 								{/if}
@@ -700,9 +703,10 @@
 		--readout-glow: none;
 		--num: #fff0a0;
 		--num-glow: 0 0 6px rgba(255, 235, 140, 0.7);
-		--crt: 'Share Tech Mono', ui-monospace, monospace;
-		--engraved: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-		--tty: 'Courier Prime', 'Courier New', monospace;
+		--crt: 'Overpass Mono', ui-monospace, monospace;
+		--engraved: 'Routed Gothic', 'Arial Narrow', sans-serif;
+		--tty: 'Overpass Mono', 'Courier New', monospace;
+		font-synthesis: none;
 		--key-face: linear-gradient(180deg, #7d8583, #5f6665);
 		--key-text: #fff;
 		--key-border: 1px solid #23292a;
@@ -723,7 +727,8 @@
 		--lamp-off: radial-gradient(circle at 40% 35%, #5c2820, #2b100c);
 		--lamp-on: radial-gradient(circle at 40% 35%, #ffc4b4, #ee4a32 60%, #9c1f10);
 		--lamp-glow: 0 0 10px rgba(238, 74, 50, 0.8);
-		--title-size: 30px;
+		--title-size: 26px;
+		--ink-spread: 0 0 0.6px rgba(36, 35, 30, 0.75);
 		--prompt: #7a1205;
 
 		min-height: 100dvh;
@@ -751,8 +756,8 @@
 			radial-gradient(ellipse 58% 30% at 34% 16%, rgba(220, 255, 200, 0.09), transparent 70%),
 			radial-gradient(circle at 50% 50%, transparent 72%, rgba(0, 0, 0, 0.42) 100%);
 		--readout: #eef0e0;
-		--crt: 'PT Mono', ui-monospace, monospace;
-		--engraved: 'PT Sans Narrow', 'Arial Narrow', sans-serif;
+		--crt: 'Open GOST Type B', 'PT Mono', monospace;
+		--engraved: 'Open GOST Type B', 'Arial Narrow', sans-serif;
 		--tty: 'PT Mono', 'Courier New', monospace;
 		--key-face: linear-gradient(180deg, #30302c, #141412);
 		--key-text: #f2f0dd;
@@ -773,6 +778,7 @@
 		--lamp-on: radial-gradient(circle at 40% 35%, #ffd9a0, #ff8a2a 60%, #a84a05);
 		--lamp-glow: 0 0 10px rgba(255, 138, 42, 0.85);
 		--title-size: 28px;
+		--ink-spread: 0 0 0.6px rgba(35, 36, 31, 0.75);
 		--prompt: #ffb35c;
 	}
 
@@ -799,8 +805,8 @@
 		--readout: #2b261c;
 		--num: #2b261c;
 		--num-glow: none;
-		--crt: 'Courier Prime', ui-monospace, monospace;
-		--engraved: 'Courier Prime', 'Courier New', monospace;
+		--crt: 'Architects Daughter', cursive;
+		--engraved: 'Architects Daughter', cursive;
 		--tty: 'Courier Prime', 'Courier New', monospace;
 		--key-face: var(--sheet), #f3ecd8;
 		--key-text: #2b261c;
@@ -820,6 +826,7 @@
 		--lamp-off: none;
 		--lamp-on: none;
 		--title-size: 26px;
+		--ink-spread: none;
 		--prompt: #a01d16;
 	}
 
@@ -859,14 +866,15 @@
 		box-shadow: var(--casing-shadow);
 	}
 
+	/* Fixed columns, so a theme's font width can't move anything to another row. */
 	.plate {
 		grid-column: 1 / -1;
-		display: flex;
-		flex-wrap: wrap;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 230px 300px 354px;
+		grid-auto-rows: 44px;
 		align-items: center;
-		justify-content: space-between;
-		gap: 8px 22px;
-		padding: 8px 14px;
+		gap: 6px 14px;
+		padding: 6px 12px;
 		border: var(--plate-edge);
 		border-radius: 3px;
 		background: var(--plate-bg);
@@ -876,30 +884,47 @@
 	.title {
 		display: flex;
 		align-items: baseline;
-		gap: 14px;
+		gap: 12px;
+		min-width: 0;
+	}
+	.title strong {
+		flex: none;
+	}
+	.title span,
+	.serial span {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 	.title strong {
 		font-size: var(--title-size);
-		font-weight: 600;
-		letter-spacing: 0.32em;
+		letter-spacing: 0.28em;
 	}
 	.title span,
 	.serial span,
 	.tally span {
-		font-size: 14px;
-		font-weight: 500;
-		letter-spacing: 0.12em;
+		font-size: 12px;
+		letter-spacing: 0.05em;
 	}
 	.serial {
 		display: flex;
 		flex-direction: column;
+		min-width: 0;
 		font-variant-numeric: tabular-nums;
 	}
 	.tally {
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr 1fr 1fr 96px;
 		align-items: center;
-		gap: 14px;
-		font-size: 17px;
+		gap: 6px;
+		font-size: 15px;
+	}
+	.tally span {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1px;
+		line-height: 1.1;
 	}
 	.num {
 		font: 16px var(--crt);
@@ -910,8 +935,16 @@
 		text-shadow: var(--num-glow);
 	}
 	.selector {
-		display: flex;
-		gap: 5px;
+		display: grid;
+		grid-template-columns: 72px 96px 56px 56px 58px;
+		gap: 4px;
+	}
+	.selector .key,
+	.tally .key {
+		padding: 2px 0;
+		white-space: nowrap;
+		overflow: hidden;
+		letter-spacing: 0.02em;
 	}
 
 	.scope-bay {
@@ -952,22 +985,39 @@
 		justify-content: center;
 		gap: 8px;
 	}
+	.switches .key {
+		min-width: 112px;
+		padding-inline: 4px;
+	}
 	.group-label {
+		width: 170px;
+		white-space: nowrap;
+		text-align: right;
 		font-size: 13px;
-		font-weight: 500;
-		letter-spacing: 0.14em;
+		letter-spacing: 0.1em;
 		color: var(--text);
 		text-shadow: var(--text-shadow);
 	}
+	/* Decoration only, placed so it can't push the keys off their common position. */
+	.switches {
+		position: relative;
+		width: 100%;
+	}
 	.gun {
+		position: absolute;
+		left: calc(50% - 400px);
+		top: 50%;
 		width: 96px;
 		height: auto;
-		margin-right: 12px;
+		transform: translateY(-50%);
 	}
 	.dial {
+		position: absolute;
+		left: calc(50% + 340px);
+		top: 50%;
 		width: 46px;
 		height: 46px;
-		margin-left: 12px;
+		transform: translateY(-50%);
 	}
 
 	/* Illuminated pushbuttons. */
@@ -977,8 +1027,8 @@
 		padding: 6px 12px;
 		border: var(--key-border);
 		border-radius: var(--key-radius);
-		font: 600 14px var(--engraved);
-		letter-spacing: 0.12em;
+		font: 14px var(--engraved);
+		letter-spacing: 0.06em;
 		color: var(--key-text);
 		cursor: pointer;
 		background: var(--key-face);
@@ -997,9 +1047,9 @@
 		cursor: not-allowed;
 	}
 	.key.small {
-		min-height: 30px;
-		padding: 3px 9px;
-		font-size: 13px;
+		min-height: 28px;
+		padding: 2px 7px;
+		font-size: 12px;
 	}
 	.key.wide {
 		width: 100%;
@@ -1037,7 +1087,7 @@
 		box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.8);
 	}
 	.roll {
-		max-height: clamp(180px, 34dvh, 420px);
+		height: clamp(140px, 20dvh, 420px);
 		overflow-y: auto;
 		padding: 12px 14px 16px;
 		background:
@@ -1045,9 +1095,11 @@
 			var(--paper);
 		color: var(--ink);
 		font: 14px/1.45 var(--tty);
+		text-shadow: var(--ink-spread);
 		box-shadow: inset 0 10px 10px -8px rgba(0, 0, 0, 0.6);
 	}
 	.roll.reporting {
+		height: auto;
 		max-height: calc(100dvh - 240px);
 	}
 	.roll p {
@@ -1093,7 +1145,7 @@
 	.dials,
 	.commit,
 	.actions {
-		padding: 10px 12px;
+		padding: 8px 12px;
 		border: var(--section-edge);
 		border-radius: 3px;
 		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
@@ -1103,8 +1155,8 @@
 	.digital h3 {
 		margin: 0 0 8px;
 		font-size: 14px;
-		font-weight: 500;
-		letter-spacing: 0.16em;
+		line-height: 18px;
+		letter-spacing: 0.1em;
 		color: var(--text-dim);
 		text-shadow: var(--text-shadow);
 	}
@@ -1122,7 +1174,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		min-height: 58px;
+		height: 60px;
 		padding: 4px 3px;
 		letter-spacing: 0.04em;
 	}
@@ -1150,12 +1202,14 @@
 	.dial-head strong {
 		display: block;
 		font-size: 19px;
-		font-weight: 600;
-		letter-spacing: 0.08em;
+		line-height: 24px;
+		letter-spacing: 0.05em;
 		text-shadow: var(--text-shadow);
 	}
 	.dial-head span,
 	.prompt {
+		display: block;
+		line-height: 18px;
 		font-size: 14px;
 		letter-spacing: 0.08em;
 		color: var(--text-dim);
@@ -1167,10 +1221,11 @@
 	}
 	.slider {
 		display: grid;
-		grid-template-columns: 66px 1fr auto;
+		grid-template-columns: 66px minmax(0, 1fr) 166px;
 		align-items: center;
 		gap: 8px;
-		margin-top: 9px;
+		height: 34px;
+		margin-top: 4px;
 		font-size: 14px;
 		letter-spacing: 0.1em;
 	}
@@ -1179,12 +1234,12 @@
 		align-items: center;
 		justify-content: flex-end;
 		gap: 4px;
-		min-width: 92px;
-		font-size: 25px;
+		font-size: 23px;
 	}
 	.slider small {
-		font: 500 12px var(--engraved);
-		letter-spacing: 0.06em;
+		width: 50px;
+		font: 12px var(--engraved);
+		letter-spacing: 0.04em;
 	}
 	.slider .num {
 		font-size: 15px;
@@ -1228,8 +1283,11 @@
 		color: #cdbe74;
 	}
 	.digital dd {
+		display: flex;
+		align-items: center;
+		height: 30px;
 		margin: 0;
-		font-size: 22px;
+		font-size: 19px;
 	}
 	.digital .num {
 		padding: 0;
@@ -1269,7 +1327,7 @@
 	/* The firing button sits under a red hinged guard. */
 	.guard {
 		position: relative;
-		min-height: 88px;
+		height: 88px;
 		perspective: 500px;
 	}
 	.fire {
@@ -1277,8 +1335,8 @@
 		inset: 0;
 		border: 2px solid #1a0a06;
 		border-radius: 4px;
-		font: 600 21px var(--engraved);
-		letter-spacing: 0.2em;
+		font: 21px var(--engraved);
+		letter-spacing: 0.14em;
 		color: #2a0702;
 		background: radial-gradient(ellipse at 50% 40%, #ff9c7c, #ff5a33 58%, #b52c10);
 		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 0 22px rgba(255, 90, 51, 0.6);
@@ -1294,8 +1352,8 @@
 		inset: 0;
 		border: 2px solid #4d0d00;
 		border-radius: 4px;
-		font: 600 14px var(--engraved);
-		letter-spacing: 0.14em;
+		font: 14px var(--engraved);
+		letter-spacing: 0.08em;
 		color: #ffd7c9;
 		cursor: pointer;
 		background:
@@ -1398,14 +1456,14 @@
 		color: #c8c2a8;
 	}
 	[data-theme='pvo'] .tally {
-		font-size: 23px;
+		font-size: 15px;
 		color: #1d2122;
 	}
 	[data-theme='pvo'] .fire {
-		inset: 4px auto auto 50%;
-		width: 78px;
-		height: 78px;
-		margin-left: -39px;
+		inset: 2px auto auto 50%;
+		width: 72px;
+		height: 72px;
+		margin-left: -36px;
 		border-radius: 50%;
 		border: 4px solid #2a2a26;
 		font-size: 19px;
@@ -1413,16 +1471,10 @@
 		box-shadow: inset 0 3px 3px rgba(255, 255, 255, 0.5), inset 0 -6px 8px rgba(90, 0, 0, 0.5), 0 0 22px rgba(255, 90, 51, 0.6), 0 0 0 3px #101010;
 	}
 	[data-theme='pvo'] .guard.open .fire {
-		top: 28px;
-	}
-	[data-theme='pvo'] .guard {
-		min-height: 110px;
+		top: 16px;
 	}
 
 	/* ---------- CHART materials ---------- */
-	[data-theme='paper'] .console {
-		padding: 16px;
-	}
 	[data-theme='paper'] .plate {
 		box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 		border-radius: 2px 14px 2px 2px;
@@ -1434,8 +1486,7 @@
 		letter-spacing: 0.06em;
 	}
 	[data-theme='paper'] .title strong {
-		font-weight: 700;
-		letter-spacing: 0.3em;
+		letter-spacing: 0.22em;
 	}
 	[data-theme='paper'] .bezel {
 		border-radius: 1px;
@@ -1451,15 +1502,17 @@
 	[data-theme='paper'] .group-label {
 		color: #e4dcc0;
 	}
-	[data-theme='paper'] .group-label {
-		font-weight: 700;
-	}
 	[data-theme='paper'] .key {
-		font-weight: 700;
-		letter-spacing: 0.04em;
+		letter-spacing: 0.02em;
 	}
-	[data-theme='paper'] .key.armed::after {
-		content: ' ✓';
+	[data-theme='paper'] .key:not(.small) {
+		font-size: 15px;
+	}
+	[data-theme='paper'] .warhead.armed::after {
+		content: '✓';
+		position: absolute;
+		top: 2px;
+		right: 5px;
 	}
 	[data-theme='paper'] .teletype {
 		padding: 0;
@@ -1522,8 +1575,7 @@
 		inset: 8px 6px 2px;
 		border: 4px double #a01d16;
 		border-radius: 3px;
-		font-size: 22px;
-		font-weight: 700;
+		font: 700 21px var(--tty);
 		letter-spacing: 0.1em;
 		color: #a01d16;
 		background: rgba(160, 29, 22, 0.05);
@@ -1552,7 +1604,34 @@
 		color: #4a4233;
 	}
 
+	/* Same rearrangement for every theme as the window narrows. */
+	@media (max-width: 1300px) {
+		.plate {
+			grid-template-columns: minmax(0, 1fr) 354px;
+		}
+		.tally {
+			order: 3;
+		}
+		.selector {
+			order: 2;
+		}
+		.serial {
+			order: 4;
+			grid-column: 1;
+			grid-row: 2;
+		}
+		.tally {
+			grid-column: 2;
+			grid-row: 2;
+		}
+	}
+
 	@media (max-width: 900px) {
+		.serial,
+		.tally {
+			grid-column: 1;
+			grid-row: auto;
+		}
 		.console {
 			grid-template-columns: minmax(0, 1fr);
 			padding: 8px;
@@ -1562,11 +1641,31 @@
 			width: 100%;
 			min-width: 0;
 		}
+		.plate {
+			grid-template-columns: minmax(0, 1fr);
+		}
 		.title span {
 			display: none;
 		}
+		.selector {
+			grid-template-columns: 1fr 1.3fr 0.8fr 0.8fr 0.8fr;
+		}
+		.slider {
+			grid-template-columns: 58px minmax(0, 1fr) 150px;
+		}
+		.switches .key {
+			min-width: 0;
+		}
+		.group-label {
+			min-width: 0;
+			width: 100%;
+			text-align: center;
+		}
 		.roll {
-			max-height: 260px;
+			height: 200px;
+		}
+		.plate {
+			grid-auto-rows: auto;
 		}
 		.gun,
 		.dial {

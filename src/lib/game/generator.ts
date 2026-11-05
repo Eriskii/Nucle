@@ -18,7 +18,7 @@ import {
 } from './scenario';
 import { distanceKm, Sim, type Tally } from './sim';
 import { THEATRES, theatreById, type Theatre } from './theatres';
-import { WEAPONS, hasDial, type Weapon } from './weapons';
+import { WEAPONS, fissionFractionAt, hasDial, type Weapon } from './weapons';
 
 const MS_DAY = 86400000;
 const EPOCH = Date.UTC(2026, 10, 5);
@@ -66,7 +66,7 @@ function rollArsenal(rng: Rng, theatre: Theatre, kind: ObjectiveKind): Weapon[] 
 		const strategic = WEAPONS.filter((w) => !w.surfaceOnly && w.maxKt >= 100 && w.maxKt <= 2000);
 		return Array.from({ length: intBetween(rng, 2, 3) }, () => pick(rng, strategic));
 	}
-	const usable = kind === 'denial' ? pool.filter((w) => w.fission >= 0.25 && w.maxKt >= 1) : pool;
+	const usable = kind === 'denial' ? pool.filter((w) => fissionFractionAt(w, w.maxKt) >= 0.25 && w.maxKt >= 1) : pool;
 	const types = Array.from({ length: intBetween(rng, 1, 3) }, () => pick(rng, usable));
 	const count = intBetween(rng, lo, hi);
 	const arsenal = Array.from({ length: count }, (_, i) => types[i % types.length]);

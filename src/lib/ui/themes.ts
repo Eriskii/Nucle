@@ -12,9 +12,12 @@ export interface Theme {
 	motion: 'refresh' | 'ppi' | 'none';
 	/** Light-emitting display, so bloom and additive flash apply. */
 	emissive: boolean;
+	/** For anything the display or the printer produced. */
 	font: string;
-	/** Font for marks made by hand, where the theme has them. */
+	/** For labels written on by a person, where the theme has them. */
 	hand: string;
+	/** For the heavy marks of a grease pencil. */
+	marker: string;
 	ink: string;
 	flash: string;
 	dim: string;
@@ -69,8 +72,9 @@ export const THEMES: Record<ThemeId, Theme> = {
 		shape: 'round',
 		motion: 'refresh',
 		emissive: true,
-		font: '"Share Tech Mono", monospace',
-		hand: '"Reenie Beanie", cursive',
+		font: '"Overpass Mono", monospace',
+		hand: '"Overpass Mono", monospace',
+		marker: '"Overpass Mono", monospace',
 		ink: '#f3e58a',
 		flash: '#f5f6ff',
 		dim: 'rgba(243, 229, 138, 0.42)',
@@ -121,8 +125,9 @@ export const THEMES: Record<ThemeId, Theme> = {
 		shape: 'round',
 		motion: 'ppi',
 		emissive: true,
-		font: '"PT Mono", monospace',
-		hand: '"PT Mono", monospace',
+		font: '"Open GOST Type B", "PT Mono", monospace',
+		hand: '"Open GOST Type B", "PT Mono", monospace',
+		marker: '"Open GOST Type B", "PT Mono", monospace',
 		ink: '#a6e86c',
 		flash: '#e6ffd0',
 		dim: 'rgba(166, 232, 108, 0.42)',
@@ -173,8 +178,9 @@ export const THEMES: Record<ThemeId, Theme> = {
 		shape: 'square',
 		motion: 'none',
 		emissive: false,
-		font: '"Courier Prime", monospace',
-		hand: '"Reenie Beanie", cursive',
+		font: '"Routed Gothic", sans-serif',
+		hand: '"Architects Daughter", cursive',
+		marker: '"Rock Salt", cursive',
 		ink: '#3a3226',
 		flash: '#a01d16',
 		dim: 'rgba(58, 50, 38, 0.5)',

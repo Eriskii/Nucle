@@ -37,9 +37,9 @@ export function heightParts(m: number, lang: Lang): [string, string] {
 export const UI = {
 	en: {
 		title: 'NUCLE',
-		console: 'WEAPONS DIRECTOR 1-3 · AN/FSQ-7 DISPLAY CONSOLE',
+		console: 'WEAPONS DIRECTOR 1-3 · AN/FSQ-7',
 		exercise: 'EXERCISE №',
-		archive: 'ARCHIVE, NOT SCORED',
+		archive: 'ARCHIVE',
 		streak: 'STREAK',
 		played: 'PLAYED',
 		best: 'BEST',
@@ -51,7 +51,7 @@ export const UI = {
 		order: 'OPERATIONAL ORDER',
 		conditions: 'CONDITIONS',
 		weather: 'WEATHER',
-		windToward: 'WIND TOWARD',
+		windToward: 'SURFACE WIND TOWARD',
 		at: 'AT',
 		wargame: 'WARGAME',
 		of: 'OF',
@@ -106,9 +106,9 @@ export const UI = {
 	},
 	ru: {
 		title: 'НУКЛЕ',
-		console: 'ПУЛЬТ ОПЕРАТОРА НАВЕДЕНИЯ · АСУ ПВО СТРАНЫ',
+		console: 'ПУЛЬТ НАВЕДЕНИЯ · АСУ ПВО',
 		exercise: 'УЧЕНИЕ №',
-		archive: 'АРХИВ, БЕЗ ЗАЧЁТА',
+		archive: 'АРХИВ',
 		streak: 'СЕРИЯ',
 		played: 'ВСЕГО',
 		best: 'РЕКОРД',
@@ -120,7 +120,7 @@ export const UI = {
 		order: 'БОЕВОЙ ПРИКАЗ',
 		conditions: 'УСЛОВИЯ',
 		weather: 'МЕТЕОУСЛОВИЯ',
-		windToward: 'ВЕТЕР В НАПРАВЛЕНИИ',
+		windToward: 'ПРИЗЕМНЫЙ ВЕТЕР В НАПРАВЛЕНИИ',
 		at: ',',
 		wargame: 'РАСЧЁТ',
 		of: 'ИЗ',
@@ -386,7 +386,7 @@ export const WEAPON_KEY_RU: Record<string, string> = {
 };
 
 export const WEAPON_NOTE_RU: Record<string, string> = {
-	w54: 'БЕЗОТКАТНОЕ ОРУДИЕ',
+	mk54: 'БЕЗОТКАТНОЕ ОРУДИЕ',
 	w70: 'НЕЙТРОННАЯ БОЕГОЛОВКА',
 	boy: 'ХИРОСИМА, 1945',
 	fat: 'НАГАСАКИ, 1945',

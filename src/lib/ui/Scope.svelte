@@ -596,22 +596,23 @@
 
 	function plumePath(ctx: CanvasRenderingContext2D, lat: number, lon: number, band: PlumeBand, reach = 1) {
 		const bearing = scenario.weather.windBearing;
-		const a = (band.length + band.upwind) / 2;
-		const c = (band.length - band.upwind) / 2;
-		const steps = 48;
-		ctx.beginPath();
-		for (let i = 0; i <= steps; i++) {
-			const t = (i / steps) * 2 * Math.PI;
-			const along = (c + a * Math.cos(t)) * reach;
-			const cross = (band.width / 2) * Math.sin(t) * Math.min(1, reach * 1.4);
-			const dist = Math.hypot(along, cross);
-			const az = bearing + (Math.atan2(cross, along) * 180) / Math.PI;
-			const [la, lo] = destination(lat, lon, az, dist);
+		const spread = Math.min(1, reach * 1.4);
+		const plot = (along: number, cross: number, first: boolean) => {
+			const a = along * reach;
+			const c = cross * spread;
+			const az = bearing + (Math.atan2(c, a) * 180) / Math.PI;
+			const [la, lo] = destination(lat, lon, az, Math.hypot(a, c));
 			const [x, y] = toScreen(la, lo);
-			if (i === 0) ctx.moveTo(x, y);
+			if (first) ctx.moveTo(x, y);
 			else ctx.lineTo(x, y);
+		};
+		ctx.beginPath();
+		// Up one side of the wind axis and back down the other. A hot contour can be two islands.
+		for (const run of band.runs) {
+			run.forEach(([along, half], i) => plot(along, half, i === 0));
+			for (let i = run.length - 2; i > 0; i--) plot(run[i][0], -run[i][1], false);
+			ctx.closePath();
 		}
-		ctx.closePath();
 	}
 
 	/** Text with an outline in the display's background, legible over anything. */
@@ -632,13 +633,13 @@
 		ctx.stroke();
 		ctx.setLineDash([]);
 		const [x, y] = toScreen(zone.lat, zone.lon);
-		ctx.font = fontOf(Math.max(11.5, size / 50));
+		ctx.font = fontOf(Math.max(11.5, size / 50), theme.hand);
 		outlined(ctx, `${tag} ${placeName(zone, lang)}`, x + 6, y - 6, color);
 	}
 
 	function drawObjectives(ctx: CanvasRenderingContext2D, now: number) {
 		const blink = reduced() || !theme.emissive ? 1 : 0.65 + 0.35 * Math.sin(now / 280);
-		ctx.font = fontOf(Math.max(11.5, size / 50));
+		ctx.font = fontOf(Math.max(12.5, size / (theme.emissive ? 50 : 42)), theme.hand);
 		if (scenario.targetZone) drawZone(ctx, scenario.targetZone, theme.target, L.tgt);
 		if (scenario.exclusion) drawZone(ctx, scenario.exclusion, theme.flash, L.clean);
 		if (scenario.noFire) drawZone(ctx, scenario.noFire, theme.alert, L.noFire);
@@ -802,7 +803,7 @@
 			ctx.moveTo(x + s + 3, y - s - 3);
 			ctx.lineTo(x - s - 3, y + s + 3);
 			ctx.stroke();
-			ctx.font = fontOf(Math.max(19, size / 34), theme.hand);
+			ctx.font = fontOf(Math.max(14, size / 44), theme.marker);
 			outlined(ctx, `${p.slot + 1}`, x + s + 5, y - s + 1, mark);
 			return;
 		}
@@ -846,7 +847,7 @@
 		ctx.moveTo(tipX, tipY);
 		ctx.lineTo(tipX - Math.sin(a + 0.5) * r * 0.45, tipY + Math.cos(a + 0.5) * r * 0.45);
 		ctx.stroke();
-		ctx.font = fontOf(Math.max(9, size / 72));
+		ctx.font = fontOf(Math.max(9, size / 72), theme.hand);
 		ctx.textAlign = 'center';
 		outlined(ctx, fmtWind(scenario.weather.windKmh, lang), x, y + r + 12, theme.ink);
 		ctx.textAlign = 'start';
@@ -1176,7 +1177,7 @@
 		ro.observe(wrap);
 		// Canvas text only uses a font once it has loaded.
 		document.fonts?.ready.then(() => (baseStale = true));
-		for (const f of ['12px "PT Mono"', '12px "Share Tech Mono"', '12px "Courier Prime"', '12px "Reenie Beanie"']) {
+		for (const f of ['12px "Open GOST Type B"', '12px "Overpass Mono"', '12px "Routed Gothic"', '12px "Architects Daughter"', '12px "Rock Salt"']) {
 			document.fonts?.load(f, 'AЯ1').then(() => (baseStale = true));
 		}
 		let raf = 0;

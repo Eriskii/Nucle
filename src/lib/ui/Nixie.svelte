@@ -18,7 +18,12 @@
 	{#each chars as c, i (i)}
 		<span class="tube" aria-hidden="true">
 			<span class="stack">8</span>
-			<span class="lit">{c.glyph}</span>
+			{#if c.glyph === '5'}
+				<!-- IN-14 tubes had no 5 of their own: the cathode is a 2, flipped top to bottom. -->
+				<span class="lit flipped">2</span>
+			{:else}
+				<span class="lit">{c.glyph}</span>
+			{/if}
 			{#if c.point}<i class="point"></i>{/if}
 		</span>
 	{/each}
@@ -63,6 +68,9 @@
 			0 0 2px #fff0d0,
 			0 0 6px #ff7a1a,
 			0 0 14px #ff5a00;
+	}
+	.flipped {
+		transform: scaleY(-1);
 	}
 	.point {
 		position: absolute;

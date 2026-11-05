@@ -1,14 +1,13 @@
 import {
 	EARTH_KM,
 	empKm,
-	falloutBands,
+	falloutField,
 	fatalityFromFallout,
 	fatalityFromPsi,
 	psiProfile,
 	radiationKm,
 	structureLossFromPsi,
 	thermalKm,
-	type PlumeBand,
 	type Weather
 } from './effects';
 import type { Weapon } from './weapons';
@@ -46,7 +45,10 @@ export interface BurstEffect {
 	idx: Int32Array;
 	survive: Float32Array;
 	standing: Float32Array;
+	/** H+1 reference dose rate in rad/h. */
 	fallout: Float32Array;
+	/** Dose in rad to people with the assumed shelter, which is what kills. */
+	dose: Float32Array;
 	emp: Uint8Array;
 	/** Overpressure at each probe. */
 	probePsi: Float32Array;
@@ -83,17 +85,6 @@ export function distanceKm(aLat: number, aLon: number, bLat: number, bLon: numbe
 	return 2 * EARTH_KM * Math.asin(Math.min(1, c / 2));
 }
 
-function plumeRateAt(bands: PlumeBand[], down: number, cross: number): number {
-	for (const b of bands) {
-		const a = (b.length + b.upwind) / 2;
-		const c = (b.length - b.upwind) / 2;
-		const u = (down - c) / a;
-		const v = cross / (b.width / 2);
-		if (u * u + v * v <= 1) return b.rate;
-	}
-	return 0;
-}
-
 export class Sim {
 	readonly grid: PopGrid;
 	readonly weather: Weather;
@@ -107,6 +98,7 @@ export class Sim {
 	private surv: Float64Array;
 	private stand: Float64Array;
 	private rate: Float64Array;
+	private dose: Float64Array;
 	private empOn: Uint8Array;
 	private touched: Int32Array;
 	private cache = new Map<string, BurstEffect>();
@@ -137,6 +129,7 @@ export class Sim {
 		this.surv = new Float64Array(n);
 		this.stand = new Float64Array(n);
 		this.rate = new Float64Array(n);
+		this.dose = new Float64Array(n);
 		this.empOn = new Uint8Array(n);
 		this.touched = new Int32Array(n);
 	}
@@ -158,8 +151,7 @@ export class Sim {
 		const thermal = thermalKm(b.kt, b.hobM, weather);
 		const radiation = radiationKm(b.kt, b.hobM, b.weapon.enhanced);
 		const emp = empKm(b.kt, b.hobM);
-		const bands = falloutBands(b.weapon, b.kt, b.hobM, weather);
-		const outer = bands[bands.length - 1];
+		const field = falloutField(b.weapon, b.kt, b.hobM, weather);
 
 		let blastMax = 0;
 		while (blastMax < 40000 && psiAt(blastMax + 0.01) > 1) blastMax = blastMax * 1.05 + 0.01;
@@ -200,7 +192,9 @@ export class Sim {
 		const dirE = Math.sin(wind);
 		const dirN = Math.cos(wind);
 
-		const reach = Math.max(directKm, emp, outer ? outer.length + outer.upwind : 0);
+		// The corner of the plume's box, since cells are culled by distance from ground zero.
+		const plumeReach = field ? Math.hypot(Math.max(field.downKm, field.upKm), field.halfWidthKm) : 0;
+		const reach = Math.max(directKm, emp, plumeReach);
 		const chordLimit = 2 * Math.sin(Math.min(reach / EARTH_KM, Math.PI) / 2);
 		const lim2 = chordLimit * chordLimit;
 
@@ -208,6 +202,7 @@ export class Sim {
 		const survive: number[] = [];
 		const standing: number[] = [];
 		const fallout: number[] = [];
+		const dose: number[] = [];
 		const empHit: number[] = [];
 		const { x, y, z } = this;
 		for (let i = 0; i < grid.n; i++) {
@@ -228,10 +223,13 @@ export class Sim {
 				st = standT[i0] + (standT[i1] - standT[i0]) * f;
 			}
 			let r = 0;
-			if (bands.length) {
+			let d = 0;
+			if (field) {
 				const east = (dx * ex + dy * ey) * EARTH_KM;
 				const north = (dx * nx + dy * ny + dz * nz) * EARTH_KM;
-				r = plumeRateAt(bands, east * dirE + north * dirN, north * dirE - east * dirN);
+				const down = east * dirE + north * dirN;
+				r = field.rateAt(down, north * dirE - east * dirN);
+				if (r > 0) d = field.doseAt(r, down);
 			}
 			const em = km <= emp ? 1 : 0;
 			if (s < 1 || st < 1 || r > 0 || em) {
@@ -239,6 +237,7 @@ export class Sim {
 				survive.push(s);
 				standing.push(st);
 				fallout.push(r);
+				dose.push(d);
 				empHit.push(em);
 			}
 		}
@@ -252,10 +251,10 @@ export class Sim {
 			const dz = pz - bz;
 			const km = 2 * EARTH_KM * Math.asin(Math.min(1, Math.hypot(dx, dy, dz) / 2));
 			probePsi[i] = psiAt(km);
-			if (bands.length) {
+			if (field) {
 				const east = (dx * ex + dy * ey) * EARTH_KM;
 				const north = (dx * nx + dy * ny + dz * nz) * EARTH_KM;
-				probeRate[i] = plumeRateAt(bands, east * dirE + north * dirN, north * dirE - east * dirN);
+				probeRate[i] = field.rateAt(east * dirE + north * dirN, north * dirE - east * dirN);
 			}
 		});
 
@@ -264,6 +263,7 @@ export class Sim {
 			survive: Float32Array.from(survive),
 			standing: Float32Array.from(standing),
 			fallout: Float32Array.from(fallout),
+			dose: Float32Array.from(dose),
 			emp: Uint8Array.from(empHit),
 			probePsi,
 			probeRate
@@ -278,7 +278,7 @@ export class Sim {
 		const probePsi = new Float32Array(this.probes.length);
 		const probeRate = new Float32Array(this.probes.length);
 		let yieldKt = 0;
-		const { stamp, surv, stand, rate, empOn, touched } = this;
+		const { stamp, surv, stand, rate, dose, empOn, touched } = this;
 		for (const b of bursts) {
 			yieldKt += b.kt;
 			const e = this.effect(b);
@@ -289,12 +289,14 @@ export class Sim {
 					surv[i] = 1;
 					stand[i] = 1;
 					rate[i] = 0;
+					dose[i] = 0;
 					empOn[i] = 0;
 					touched[count++] = i;
 				}
 				surv[i] *= e.survive[j];
 				stand[i] *= e.standing[j];
 				rate[i] += e.fallout[j];
+				dose[i] += e.dose[j];
 				if (e.emp[j]) empOn[i] = 1;
 			}
 			for (let p = 0; p < probePsi.length; p++) {
@@ -312,7 +314,7 @@ export class Sim {
 		for (let k = 0; k < count; k++) {
 			const i = touched[k];
 			const pop = grid.pop[i];
-			const f = 1 - surv[i] * (1 - fatalityFromFallout(rate[i]));
+			const f = 1 - surv[i] * (1 - fatalityFromFallout(dose[i]));
 			const s = 1 - stand[i];
 			fatalities += pop * f;
 			structures += grid.structures[i] * s;
