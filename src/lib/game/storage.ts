@@ -7,6 +7,7 @@ const HISTORY = 'nucle_hist';
 const RUN = 'nucle_run';
 const SEEN = 'nucle_seen';
 const THEME = 'nucle_theme';
+const SOUND = 'nucle_sound';
 const MAX_DAYS = 150;
 const YEAR_S = 34560000; // 400 days, the longest browsers will honour.
 
@@ -83,6 +84,9 @@ export function saveRun(run: SavedRun) {
 
 export const loadThemeId = () => readCookie(THEME);
 export const saveThemeId = (id: string) => writeCookie(THEME, id);
+
+export const loadSoundOff = () => readCookie(SOUND) === 'off';
+export const saveSoundOff = (off: boolean) => writeCookie(SOUND, off ? 'off' : 'on');
 
 export const hasSeenOrders = () => readCookie(SEEN) === '1';
 export const markOrdersSeen = () => writeCookie(SEEN, '1');

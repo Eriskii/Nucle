@@ -99,6 +99,7 @@ export const UI = {
 		clean: 'CLEAN',
 		noFire: 'NO FIRE',
 		translate: 'TRANSLATE',
+		sound: 'ROOM AUDIO',
 		theme: 'CONSOLE',
 		acknowledge: 'ACKNOWLEDGE',
 		zoneTerm: 'PSI'
@@ -167,6 +168,7 @@ export const UI = {
 		clean: 'ЧИСТО',
 		noFire: 'ЗАПРЕТ',
 		translate: 'ПЕРЕВОД',
+		sound: 'ЗВУК',
 		theme: 'ПУЛЬТ',
 		acknowledge: 'ПРИНЯТО',
 		zoneTerm: 'КГ/СМ²'

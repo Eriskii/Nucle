@@ -8,7 +8,7 @@
 	import type { PopGrid } from '#lib/game/sim.ts';
 	import type { TheatreKind } from '#lib/game/theatres.ts';
 	import type { Theme } from './themes.ts';
-	import { MAX_TILE_Z, MIN_TILE_Z, TileStore, tileZoomFor, type Tile } from './tiles.ts';
+	import { BUILDING_TILE_Z, MAX_TILE_Z, MIN_TILE_Z, tileBudget, TileStore, tileZoomFor, type TileLayer } from './tiles.ts';
 
 	interface Props {
 		theme: Theme;
@@ -86,28 +86,45 @@
 		return proj.inverse(x, y);
 	}
 
-	const panLimit = () => radius * (1 - 1 / zoom);
+	// Controls set where the view is headed, and each frame glides toward it.
+	let goalZoom = 1;
+	let goalX = 0;
+	let goalY = 0;
+	let lastStep = 0;
 
-	function clampPan() {
-		const limit = panLimit();
-		cx = Math.max(-limit, Math.min(limit, cx));
-		cy = Math.max(-limit, Math.min(limit, cy));
+	function clampGoal() {
+		const limit = radius * (1 - 1 / goalZoom);
+		goalX = Math.max(-limit, Math.min(limit, goalX));
+		goalY = Math.max(-limit, Math.min(limit, goalY));
+	}
+
+	function stepView(now: number) {
+		const dt = Math.min(50, now - lastStep);
+		lastStep = now;
+		if (zoom === goalZoom && cx === goalX && cy === goalY) return;
+		const f = reduced() ? 1 : 1 - Math.exp(-dt / 75);
+		const logZoom = Math.log(zoom) + (Math.log(goalZoom) - Math.log(zoom)) * f;
+		const settled = Math.abs(logZoom - Math.log(goalZoom)) < 0.002 && Math.hypot(goalX - cx, goalY - cy) * pxPerKm < 0.4;
+		zoom = settled ? goalZoom : Math.exp(logZoom);
+		cx = settled ? goalX : cx + (goalX - cx) * f;
+		cy = settled ? goalY : cy + (goalY - cy) * f;
 	}
 
 	function zoomBy(f: number, px = size / 2, py = size / 2) {
-		const next = Math.max(1, Math.min(maxZoom, zoom * f));
-		const before = [(px - size / 2) / pxPerKm + cx, -(py - size / 2) / pxPerKm + cy];
-		zoom = next;
-		const k = ((size / 2) * 0.97 * next) / radius;
-		cx = before[0] - (px - size / 2) / k;
-		cy = before[1] + (py - size / 2) / k;
-		clampPan();
+		const base = ((size / 2) * 0.97) / radius;
+		const next = Math.max(1, Math.min(maxZoom, goalZoom * f));
+		const worldX = (px - size / 2) / (base * goalZoom) + goalX;
+		const worldY = -(py - size / 2) / (base * goalZoom) + goalY;
+		goalZoom = next;
+		goalX = worldX - (px - size / 2) / (base * next);
+		goalY = worldY + (py - size / 2) / (base * next);
+		clampGoal();
 	}
 
 	function recenter() {
-		zoom = 1;
-		cx = 0;
-		cy = 0;
+		goalZoom = 1;
+		goalX = 0;
+		goalY = 0;
 	}
 
 	// Vector layers are projected once per theatre, so panning only rescales numbers.
@@ -158,14 +175,37 @@
 	});
 
 	// The map is cached to an offscreen canvas and only redrawn when the view changes.
+	interface View {
+		cx: number;
+		cy: number;
+		k: number;
+	}
 	let base: HTMLCanvasElement | null = null;
+	let baseView: View = { cx: 0, cy: 0, k: 1 };
+	// The previous map stays up and fades out, so no redraw ever snaps in.
+	let prevBase: HTMLCanvasElement | null = null;
+	let prevView: View = baseView;
+	let spareBase: HTMLCanvasElement | null = null;
+	let fadeStart = 0;
+	const FADE_MS = 110;
+	// Maps render past the visible edge so that moving never exposes a blank.
+	const margin = () => Math.round(size * 0.25);
+	// On a slow connection, stop waiting and show what has arrived so far.
+	const SLOW_NETWORK_MS = 2500;
+	let waitingSince = 0;
+	let lastCheck = 0;
+	let lastBuilt = 0;
+	// A copy of the whole disc, kept behind whatever is current. When a detailed map
+	// shrinks during a zoom out, this is what shows around it instead of nothing.
+	let backdrop: HTMLCanvasElement | null = null;
+	let backdropView: View = baseView;
 	let sweepBuf: HTMLCanvasElement | null = null;
 	let baseStale = true;
 	let interacting = false;
 	let settle = 0;
 
 	function drawLines(ctx: CanvasRenderingContext2D, lines: Line[], color: string, width: number, dash: number[] = []) {
-		const halfKm = size / 2 / pxPerKm;
+		const halfKm = (size / 2 + margin()) / pxPerKm;
 		const left = cx - halfKm;
 		const right = cx + halfKm;
 		const bottom = cy - halfKm;
@@ -194,7 +234,6 @@
 		return mag * 10;
 	}
 
-	const BUILDINGS_FROM_Z = 13;
 	const MAJOR_LABELS: Record<TheatreKind, number> = { city: 1, region: 8, world: 12 };
 
 	let store: TileStore | null = null;
@@ -207,20 +246,35 @@
 		return store;
 	};
 
-	function tileView(): { z: number; tiles: Tile[]; complete: boolean } | null {
-		const [centreLat] = fromScreen(size / 2, size / 2);
-		const z = Math.min(MAX_TILE_Z, tileZoomFor(pxPerKm, centreLat));
+	/** The finest tile level the view can afford, which is finer than its scale needs. */
+	function tileView(): { layers: TileLayer[]; covered: boolean; complete: boolean } | null {
 		const tiles = storeFor();
-		if (z < MIN_TILE_Z || !tiles.available) return null;
+		if (!tiles.available) return null;
+		const [centreLat] = fromScreen(size / 2, size / 2);
 		const edge: [number, number][] = [];
-		for (let i = 0; i <= 4; i++) {
-			for (let j = 0; j <= 4; j++) edge.push(fromScreen((i / 4) * size, (j / 4) * size));
+		const M = margin();
+		const span = size + 2 * M;
+		for (let i = 0; i <= 8; i++) {
+			for (let j = 0; j <= 8; j++) edge.push(fromScreen((i / 8) * span - M, (j / 8) * span - M));
 		}
-		return { z, ...tiles.view(z, edge) };
+		// Web Mercator tiles can't cover the pole or wrap around the hemisphere view.
+		const lons = edge.map((e) => e[1]);
+		if (edge.some((e) => Math.abs(e[0]) > 80) || Math.max(...lons) - Math.min(...lons) > 170) return null;
+		const viewKm = ((size / 2 + M) / pxPerKm) * Math.SQRT2;
+		const keep = (lat: number, lon: number, halfKm: number) => {
+			const [x, y] = proj.forward(lat, lon);
+			return Math.hypot(x - cx, y - cy) <= viewKm + halfKm;
+		};
+		const display = tileZoomFor(pxPerKm, centreLat);
+		for (let z = Math.min(MAX_TILE_Z, display + 4); z >= MIN_TILE_Z; z--) {
+			const wanted = tiles.tilesFor(z, edge, keep);
+			if (wanted.length <= tileBudget(z)) return tiles.view(z, wanted);
+		}
+		return null;
 	}
 
 	/** Draws tiles in km coordinates, so stroke widths are given in km too. */
-	function drawTiles(ctx: CanvasRenderingContext2D, tiles: Tile[], ratio: number) {
+	function drawTiles(ctx: CanvasRenderingContext2D, layers: TileLayer[], ratio: number) {
 		const k = pxPerKm;
 		const px = (n: number) => n / k;
 		// Lines thicken toward their true width once they are big enough to show it.
@@ -237,13 +291,20 @@
 				ctx.stroke(path);
 			}
 		};
+		// Everything scales with the display, not the tile level, so there's no step
+		// in brightness when a finer level of tiles lands.
+		const scale = Math.log2(k);
+		const near = Math.max(0, Math.min(1, (scale + 2) / 8));
+		const buildings = buildingFade();
 		ctx.save();
-		ctx.setTransform(ratio * k, 0, 0, -ratio * k, ratio * (size / 2 - cx * k), ratio * (size / 2 + cy * k));
+		const M = margin();
+		ctx.setTransform(ratio * k, 0, 0, -ratio * k, ratio * (M + size / 2 - cx * k), ratio * (M + size / 2 + cy * k));
 		ctx.lineJoin = 'round';
 		ctx.lineCap = 'round';
-		for (const t of tiles) {
+		for (const { tile: t, clip } of layers) {
 			ctx.save();
 			ctx.clip(t.frame);
+			if (clip) ctx.clip(clip);
 			ctx.fillStyle = theme.green;
 			ctx.fill(t.green);
 			ctx.fillStyle = theme.water;
@@ -252,22 +313,26 @@
 			ctx.lineWidth = px(1.2);
 			ctx.stroke(t.waterways);
 
-			if (t.z >= BUILDINGS_FROM_Z) {
+			if (t.z >= BUILDING_TILE_Z && buildings > 0) {
+				ctx.globalAlpha = buildings;
 				ctx.fillStyle = theme.buildingFill;
 				ctx.fill(t.buildings);
 				ctx.strokeStyle = theme.buildingEdge;
 				ctx.lineWidth = px(1);
 				ctx.stroke(t.buildings);
+				ctx.globalAlpha = 1;
 			}
 			ctx.strokeStyle = theme.runway;
 			ctx.lineWidth = road(1.3, 20);
 			ctx.stroke(t.runways);
-			// Road hierarchy tightens with distance: from afar only highways stand out.
-			const near = Math.max(0, Math.min(1, (t.z - MIN_TILE_Z) / (MAX_TILE_Z - MIN_TILE_Z)));
-			if (t.z >= BUILDINGS_FROM_Z) casedRoad(t.roads.service, theme.roadService, 0.9, 6);
-			casedRoad(t.roads.minor, `rgba(${theme.roadRgb}, ${0.16 + 0.69 * near * near})`, 0.6 + 0.4 * near, 10);
-			casedRoad(t.roads.mid, `rgba(${theme.roadRgb}, ${0.34 + 0.61 * near})`, 0.8 + 0.5 * near, 16);
-			casedRoad(t.roads.major, `rgba(${theme.roadRgb}, ${0.62 + 0.38 * near})`, 1.1 + 0.7 * near, 26);
+			// Road hierarchy tightens with distance: from afar only highways stand out,
+			// and streets read as a fine texture until they have room to be lines.
+			ctx.globalAlpha = 0.05 + 0.95 * near * near * near;
+			casedRoad(t.roads.service, theme.roadService, 0.4 + 0.5 * near, 6);
+			ctx.globalAlpha = 1;
+			casedRoad(t.roads.minor, `rgba(${theme.roadRgb}, ${0.1 + 0.75 * near * near * near})`, 0.5 + 0.5 * near, 10);
+			casedRoad(t.roads.mid, `rgba(${theme.roadRgb}, ${0.24 + 0.71 * near * near})`, 0.7 + 0.6 * near, 16);
+			casedRoad(t.roads.major, `rgba(${theme.roadRgb}, ${0.5 + 0.5 * near})`, 0.9 + 0.9 * near, 26);
 			ctx.strokeStyle = theme.rail;
 			ctx.lineWidth = px(1.1);
 			ctx.setLineDash([px(5), px(3)]);
@@ -278,21 +343,42 @@
 			ctx.stroke(t.borders);
 			ctx.setLineDash([]);
 			ctx.strokeStyle = theme.coast;
-			ctx.lineWidth = px(1.7);
-			ctx.stroke(t.water);
+			ctx.lineWidth = px(1.2 + 0.5 * near);
+			ctx.stroke(t.shore);
+			// A pond earns an outline once it's a few pixels across.
+			const pondFade = Math.max(0, Math.min(1, (k * 1.5 - 8) / 24));
+			if (pondFade > 0) {
+				ctx.globalAlpha = pondFade;
+				ctx.lineWidth = px(1);
+				ctx.stroke(t.ponds);
+				ctx.globalAlpha = 1;
+			}
 			ctx.restore();
 		}
 		ctx.restore();
 	}
 
+	/** Buildings resolve gradually as their tiles become legible, from 0 to 1. */
+	const buildingFade = () => Math.max(0, Math.min(1, Math.log2(pxPerKm) - 5.6));
+
 	function drawBase() {
-		if (!base) base = document.createElement('canvas');
+		const previous = base;
+		base = spareBase ?? document.createElement('canvas');
+		spareBase = prevBase;
+		prevBase = previous;
+		prevView = baseView;
+		baseView = { cx, cy, k: pxPerKm };
+		fadeStart = previous && !reduced() ? performance.now() : 0;
+		lastBuilt = performance.now();
+		waitingSince = 0;
 		const ratio = dpr();
-		base.width = Math.round(size * ratio);
-		base.height = Math.round(size * ratio);
+		const M = margin();
+		base.width = Math.round((size + 2 * M) * ratio);
+		base.height = Math.round((size + 2 * M) * ratio);
 		const ctx = base.getContext('2d')!;
 		ctx.scale(ratio, ratio);
-		ctx.clearRect(0, 0, size, size);
+		ctx.translate(M, M);
+		ctx.clearRect(-M, -M, size + 2 * M, size + 2 * M);
 		ctx.lineJoin = 'round';
 
 		// Range rings and bearing lines, spaced to the current zoom.
@@ -304,7 +390,7 @@
 		ctx.fillStyle = theme.gridText;
 		ctx.font = fontOf(Math.max(9, size / 66));
 		// Only rings crossing the view: at deep zoom there could be thousands.
-		const viewKm = (size / 2 / pxPerKm) * Math.SQRT2;
+		const viewKm = ((size / 2 + M) / pxPerKm) * Math.SQRT2;
 		const fromCentre = Math.hypot(cx, cy);
 		const firstRing = Math.max(1, Math.floor((fromCentre - viewKm) / ringStep));
 		const lastRing = Math.min(Math.ceil((fromCentre + viewKm) / ringStep), Math.floor((radius * 1.0001) / ringStep));
@@ -336,7 +422,6 @@
 
 		const isCity = scenario.theatre.kind === 'city';
 		const streamed = tileView();
-		const buildingsShown = (streamed?.z ?? 0) >= BUILDINGS_FROM_Z;
 		const scale = pxPerKm;
 		const screenX = (i: number) => size / 2 + (gridXY[i * 2] - cx) * scale;
 		const screenY = (i: number) => size / 2 - (gridXY[i * 2 + 1] - cy) * scale;
@@ -349,7 +434,7 @@
 			for (let i = 0; i < grid.n; i++) {
 				const x = screenX(i);
 				const y = screenY(i);
-				if (x < -cellPx || y < -cellPx || x > size + cellPx || y > size + cellPx) continue;
+				if (x < -M - cellPx || y < -M - cellPx || x > size + M + cellPx || y > size + M + cellPx) continue;
 				const v = Math.log1p(Math.max(grid.pop[i], grid.structures[i] * 2)) / logMax;
 				const b = Math.min(3, Math.floor(v * v * 5));
 				buckets[b].push([x, y]);
@@ -365,7 +450,9 @@
 
 		// Up close each cell breaks into stipple, its dot count following its density.
 		// Offsets hash from the cell index, so dots hold still as the map pans.
-		if (showDensity && cellPx > STIPPLE_FROM_PX && !buildingsShown) {
+		const stippleAlpha = 1 - buildingFade();
+		if (showDensity && cellPx > STIPPLE_FROM_PX && stippleAlpha > 0) {
+			ctx.globalAlpha = stippleAlpha;
 			const logMax = Math.log1p(Math.max(...sampleMax()));
 			const cellH = meta.step * 111.2 * scale;
 			const cellW = cellH * Math.max(0.2, Math.cos((scenario.theatre.lat * Math.PI) / 180));
@@ -374,7 +461,7 @@
 			for (let i = 0; i < grid.n; i++) {
 				const x = screenX(i);
 				const y = screenY(i);
-				if (x < -cellW || y < -cellH || x > size + cellW || y > size + cellH) continue;
+				if (x < -M - cellW || y < -M - cellH || x > size + M + cellW || y > size + M + cellH) continue;
 				const v = Math.log1p(Math.max(grid.pop[i], grid.structures[i] * 2)) / logMax;
 				const count = Math.min(240, Math.round((v * v * v * area) / 26));
 				let h = Math.imul(i + 1, 0x9e3779b1) >>> 0;
@@ -385,13 +472,14 @@
 					ctx.fillRect(x + fx * cellW, y + fy * cellH, 1.4, 1.4);
 				}
 			}
+			ctx.globalAlpha = 1;
 		}
 
 		// Finer layers fade in with zoom so the wide view stays readable.
 		const fade = (from: number, to: number) => Math.max(0, Math.min(1, (zoom - from) / (to - from)));
 		const minorIn = isCity ? fade(1.2, 3) : fade(1.5, 4);
-		// The baked map holds until the streamed tiles for this view have arrived.
-		if (!streamed?.complete) {
+		// The baked map holds until streamed tiles cover this view.
+		if (!streamed?.covered) {
 			drawLines(ctx, layers.urban, theme.urban, 1);
 			drawLines(ctx, layers.rivers, theme.river, 1.1);
 			drawLines(ctx, layers.lakes, theme.lake, 1.2);
@@ -402,7 +490,7 @@
 			drawLines(ctx, layers.borders, theme.border, 1.3, [5, 3]);
 			drawLines(ctx, layers.coast, theme.coast, 1.7);
 		}
-		if (streamed) drawTiles(ctx, streamed.tiles, ratio);
+		if (streamed) drawTiles(ctx, streamed.layers, ratio);
 
 		// Damage from the last run, painted over the dots as hot phosphor.
 		if (damage) {
@@ -412,7 +500,7 @@
 				if (d < 0.05) continue;
 				const x = screenX(i);
 				const y = screenY(i);
-				if (x < -cellPx || y < -cellPx || x > size + cellPx || y > size + cellPx) continue;
+				if (x < -M - cellPx || y < -M - cellPx || x > size + M + cellPx || y > size + M + cellPx) continue;
 				const soften = cellPx > STIPPLE_FROM_PX ? 0.42 : 1;
 				ctx.fillStyle = d > 0.6 ? `rgba(${theme.damageHot}, ${(0.5 + d * 0.5) * soften})` : `rgba(${theme.damageWarm}, ${(0.2 + d) * soften})`;
 				ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot);
@@ -420,7 +508,7 @@
 		}
 
 		// A soft second pass gives everything the bloom of a real CRT.
-		if (theme.emissive && 'filter' in ctx && !interacting) {
+		if (theme.emissive && 'filter' in ctx) {
 			const copy = document.createElement('canvas');
 			copy.width = base.width;
 			copy.height = base.height;
@@ -429,7 +517,7 @@
 			ctx.setTransform(1, 0, 0, 1, 0, 0);
 			ctx.globalCompositeOperation = 'lighter';
 			ctx.filter = `blur(${2.2 * ratio}px)`;
-			ctx.globalAlpha = streamed?.complete ? 0.35 : 0.6;
+			ctx.globalAlpha = 0.32;
 			ctx.drawImage(copy, 0, 0);
 			ctx.restore();
 		}
@@ -459,7 +547,7 @@
 		const majors = meta.places.slice(0, MAJOR_LABELS[scenario.theatre.kind]);
 		for (const m of majors) {
 			const [x, y] = toScreen(m.lat, m.lon);
-			if (x < 0 || y < 0 || x > size || y > size) continue;
+			if (x < -M || y < -M || x > size + M || y > size + M) continue;
 			const name = placeName(m, lang);
 			const w = name.length * fontPx * 0.56;
 			if (!claim(x - 4, y - fontPx * 1.1, w + 14, fontPx * 2)) continue;
@@ -475,6 +563,13 @@
 		}
 
 		baseStale = false;
+		if (goalZoom === 1 && zoom === 1) {
+			backdrop ??= document.createElement('canvas');
+			backdrop.width = base.width;
+			backdrop.height = base.height;
+			backdrop.getContext('2d')!.drawImage(base, 0, 0);
+			backdropView = baseView;
+		}
 	}
 
 	let maxCache: number[] | null = null;
@@ -809,10 +904,60 @@
 		return sweepBuf;
 	}
 
+	/** Where a map built for one view lands in the current view. */
+	function mapRect(v: View): [number, number, number] {
+		const span = (size + 2 * margin()) * (pxPerKm / v.k);
+		return [size / 2 + (v.cx - cx) * pxPerKm - span / 2, size / 2 - (v.cy - cy) * pxPerKm - span / 2, span];
+	}
+
+	function drawMap(ctx: CanvasRenderingContext2D, map: HTMLCanvasElement, v: View) {
+		const [x, y, s] = mapRect(v);
+		ctx.drawImage(map, x, y, s, s);
+	}
+
+	function coversView(v: View) {
+		const [x, y, span] = mapRect(v);
+		return x <= 0 && y <= 0 && x + span >= size && y + span >= size;
+	}
+
+	/**
+	 * The map on screen stays put, stretched to the current view, until its
+	 * replacement is ready. Building earlier would show a coarser fallback and then
+	 * refill it, which reads as a flash, so each change of view fades in only once.
+	 */
+	function updateBase(now: number) {
+		if (!base) {
+			drawBase();
+			return;
+		}
+		if (!baseStale) {
+			waitingSince = 0;
+			return;
+		}
+		if (!waitingSince) waitingSince = now;
+		// A map that no longer fills the view can't wait for anything.
+		if (!coversView(baseView)) {
+			if (now - lastBuilt > 120) drawBase();
+			return;
+		}
+		if (interacting) {
+			// Only rebuild mid-gesture if the stretched map no longer fills the view.
+			const off = Math.max(Math.abs(cx - baseView.cx), Math.abs(cy - baseView.cy)) * pxPerKm;
+			const stretch = pxPerKm / baseView.k;
+			if (now - lastBuilt > 300 && (stretch < 0.8 || stretch > 1.5 || off > margin() * 0.6)) drawBase();
+			return;
+		}
+		if (now - fadeStart < FADE_MS || now - lastCheck < 120) return;
+		lastCheck = now;
+		const next = tileView();
+		if (!next || next.complete || now - waitingSince > SLOW_NETWORK_MS) drawBase();
+	}
+
 	function frame(now: number) {
 		const ctx = canvas?.getContext('2d');
 		if (!ctx) return;
-		if (baseStale || !base) drawBase();
+		stepView(now);
+		updateBase(now);
 		const ratio = dpr();
 		ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 		ctx.clearRect(0, 0, size, size);
@@ -824,7 +969,28 @@
 			ctx.clip();
 		}
 
-		ctx.drawImage(base!, 0, 0, size, size);
+		if (backdrop && !coversView(baseView)) {
+			const [x, y, span] = mapRect(baseView);
+			const around = new Path2D();
+			around.rect(0, 0, size, size);
+			around.rect(x, y, span, span);
+			ctx.save();
+			ctx.clip(around, 'evenodd');
+			drawMap(ctx, backdrop, backdropView);
+			ctx.restore();
+		}
+
+		// A plain crossfade dims whatever both maps share, and holding either one at
+		// full strength brightens the mix. This curve splits the difference, and at
+		// this length the small change that's left reads as a settle, not a flash.
+		const t = fadeStart && prevBase ? Math.min(1, (now - fadeStart) / FADE_MS) : 1;
+		if (t < 1 && prevBase) {
+			ctx.globalAlpha = Math.pow(1 - t, 0.7);
+			drawMap(ctx, prevBase, prevView);
+			ctx.globalAlpha = Math.pow(t, 0.7);
+		}
+		drawMap(ctx, base!, baseView);
+		ctx.globalAlpha = 1;
 
 		// SAGE has no sweep. Its tubes are rewritten from the display drum, so traces
 		// brighten together then sag toward the next pass.
@@ -833,8 +999,8 @@
 			const phase = (now % DRUM_MS) / DRUM_MS;
 			rewrite = Math.exp(-3.2 * phase);
 			ctx.globalCompositeOperation = 'lighter';
-			ctx.globalAlpha = 0.24 * Math.exp(-7 * phase);
-			ctx.drawImage(base!, 0, 0, size, size);
+			ctx.globalAlpha = 0.05 * Math.exp(-7 * phase);
+			drawMap(ctx, base!, baseView);
 			ctx.globalAlpha = 1;
 			ctx.globalCompositeOperation = 'source-over';
 		}
@@ -855,7 +1021,8 @@
 			b.fillStyle = g;
 			b.fillRect(0, 0, buf.width, buf.height);
 			b.globalCompositeOperation = 'source-in';
-			b.drawImage(base!, 0, 0);
+			const [mx, my, ms] = mapRect(baseView);
+			b.drawImage(base!, mx * ratio, my * ratio, ms * ratio, ms * ratio);
 			ctx.globalCompositeOperation = 'lighter';
 			ctx.drawImage(buf, 0, 0, size, size);
 			const beam = ctx.createConicGradient(angle - Math.PI / 2, size / 2, size / 2);
@@ -868,7 +1035,7 @@
 			ctx.globalCompositeOperation = 'source-over';
 		}
 
-		ctx.globalAlpha = theme.motion === 'refresh' ? 0.74 + 0.26 * rewrite : 1;
+		ctx.globalAlpha = theme.motion === 'refresh' ? 0.86 + 0.14 * rewrite : 1;
 		drawObjectives(ctx, now);
 		if (playing) {
 			drawPlayback(ctx, now);
@@ -970,9 +1137,12 @@
 			if (insideScope(lat, lon)) onmove(dragSlot, lat, lon);
 			cursor = { lat, lon };
 		} else if (panning && moved && zoom > 1) {
-			cx -= (pos.x - prev.x) / pxPerKm;
-			cy += (pos.y - prev.y) / pxPerKm;
-			clampPan();
+			// A drag follows the hand exactly, so no glide here.
+			goalX -= (pos.x - prev.x) / pxPerKm;
+			goalY += (pos.y - prev.y) / pxPerKm;
+			clampGoal();
+			cx = goalX;
+			cy = goalY;
 		}
 	}
 
@@ -1032,13 +1202,23 @@
 		void theme;
 		void lang;
 		baseStale = true;
-		// Bloom is costly, so it waits until the view stops moving.
+		// A full build waits until the view stops moving.
 		interacting = true;
 		clearTimeout(settle);
 		settle = window.setTimeout(() => {
 			interacting = false;
 			baseStale = true;
 		}, 140);
+	});
+
+	// The backdrop is only true to the look and data it was drawn with.
+	$effect(() => {
+		void size;
+		void damage;
+		void showDensity;
+		void theme;
+		void lang;
+		backdrop = null;
 	});
 
 	$effect(() => {
@@ -1057,13 +1237,13 @@
 
 	// Arrow keys beside the display. A press moves a step, holding keeps it moving.
 	let heldTimer = 0;
-	const stepFraction = 0.18;
+	const stepFraction = 0.1;
 
 	function nudge(dx: number, dy: number) {
-		const visible = radius / zoom;
-		cx += dx * visible * stepFraction;
-		cy += dy * visible * stepFraction;
-		clampPan();
+		const visible = radius / goalZoom;
+		goalX += dx * visible * stepFraction;
+		goalY += dy * visible * stepFraction;
+		clampGoal();
 	}
 
 	function hold(action: () => void) {
@@ -1082,7 +1262,7 @@
 		if (e.detail === 0) action();
 	};
 
-	const ZOOM_STEP = 1.35;
+	const ZOOM_STEP = 1.22;
 	const arrows: { label: string; glyph: string; dx: number; dy: number; area: string }[] = [
 		{ label: 'North', glyph: '▲', dx: 0, dy: 1, area: 'n' },
 		{ label: 'West', glyph: '◀', dx: -1, dy: 0, area: 'w' },

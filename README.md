@@ -34,4 +34,6 @@ Streets and buildings stream at runtime as vector tiles from [OpenFreeMap](https
 using the [OpenMapTiles](https://www.openmaptiles.org/) schema, with data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
 They're for display only. Scoring uses the population and built-up rasters.
 
+All audio is synthesized in the browser by `src/lib/ui/sound.ts`, with no sound files.
+
 Weapon effects are simplified from public figures in Glasstone & Dolan and OTA 1979. It's a game model, not a hydrocode.

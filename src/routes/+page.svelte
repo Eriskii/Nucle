@@ -42,10 +42,12 @@
 		hasSeenOrders,
 		loadHistory,
 		loadRun,
+		loadSoundOff,
 		loadThemeId,
 		markOrdersSeen,
 		saveResult,
 		saveRun,
+		saveSoundOff,
 		saveThemeId,
 		statsFrom,
 		type HistoryEntry
@@ -53,6 +55,7 @@
 	import { hasDial, type Weapon } from '#lib/game/weapons.ts';
 	import Nixie from '#lib/ui/Nixie.svelte';
 	import Scope from '#lib/ui/Scope.svelte';
+	import { Soundscape, type SoundEvent } from '#lib/ui/sound.ts';
 	import { THEME_ORDER, THEMES, type ThemeId } from '#lib/ui/themes.ts';
 
 	const PAPER_TERMS = {
@@ -98,6 +101,39 @@
 	let showDensity = $state(true);
 	let copied = $state(false);
 
+	// Browsers only allow audio after a gesture, so the room comes alive on first touch.
+	let soundscape: Soundscape | null = null;
+	let soundOff = $state(false);
+	const sfx = (e: SoundEvent) => soundscape?.play(e);
+
+	function wakeAudio() {
+		if (soundscape) return;
+		const ctx = new AudioContext();
+		soundscape = new Soundscape(ctx);
+		soundscape.setMuted(soundOff);
+		soundscape.setTheme(themeId);
+		soundscape.startScheduler();
+		void ctx.resume();
+	}
+
+	function toggleSound() {
+		soundOff = !soundOff;
+		saveSoundOff(soundOff);
+		soundscape?.setMuted(soundOff);
+	}
+
+	/** Controls sound by what they physically are, wherever they sit on the console. */
+	function onConsolePress(e: PointerEvent) {
+		wakeAudio();
+		const el = (e.target as HTMLElement).closest('button, input');
+		if (!el || (el as HTMLButtonElement).disabled) return;
+		if (el.matches('.fire, .cover, .wargame .key')) return;
+		if (el.matches('.padkey')) sfx('arrow');
+		else if (el.matches('.warhead')) sfx('select');
+		else if (el.matches('.switches .key')) sfx('toggle');
+		else if (el.matches('button')) sfx('key');
+	}
+
 	const stats = $derived(statsFrom(history));
 	const finished = $derived(final !== null);
 	const conditions = $derived(scenario ? conditionTexts(scenario, lang) : []);
@@ -125,6 +161,7 @@
 			const params = new URLSearchParams(location.search);
 			const wanted = params.get('theme') ?? loadThemeId();
 			if (wanted && wanted in THEMES) themeId = wanted as ThemeId;
+			soundOff = loadSoundOff();
 			const requested = Number(params.get('day'));
 			const today = dayNumber(new Date());
 			const day = requested >= 1 ? requested : today;
@@ -158,6 +195,8 @@
 		themeId = id;
 		translated = false;
 		saveThemeId(id);
+		wakeAudio();
+		soundscape?.setTheme(id);
 	}
 
 	function persist(done = false) {
@@ -184,6 +223,7 @@
 		placements.push({ slot: free, lat, lon, kt: w.maxKt, hobM: defaultHob(w, w.maxKt) });
 		const next = scenario.arsenal.findIndex((_, i) => !placements.some((p) => p.slot === i));
 		selected = next >= 0 ? next : free;
+		sfx('place');
 		planChanged();
 	}
 
@@ -199,12 +239,14 @@
 		if (finished) return;
 		placements = placements.filter((p) => p.slot !== slot);
 		selected = slot;
+		sfx('erase');
 		planChanged();
 	}
 
 	function setKt(v: number) {
 		if (selectedPlacement && selectedWeapon) {
 			selectedPlacement.kt = ktFromSlider(selectedWeapon, v);
+			sfx('slider');
 			planChanged();
 		}
 	}
@@ -212,6 +254,7 @@
 	function setHob(m: number) {
 		if (selectedPlacement) {
 			selectedPlacement.hobM = m;
+			sfx('slider');
 			planChanged();
 		}
 	}
@@ -222,6 +265,7 @@
 		const cells = new Float32Array(sim.grid.n);
 		lastRun = evaluate(scenario, sim, placements, cells);
 		damage = cells;
+		sfx('wargame');
 		persist();
 	}
 
@@ -236,6 +280,9 @@
 		pendingFinal = out;
 		pendingCells = cells;
 		coverOpen = false;
+		sfx('fire');
+		// One per warhead, in step with the scope's playback.
+		placements.forEach((_, i) => setTimeout(() => sfx('impact'), 900 + i * 420));
 		playToken++;
 	}
 
@@ -245,6 +292,7 @@
 		damage = pendingCells;
 		if (sim) difficulty = assessDifficulty(scenario, sim, solution);
 		pendingFinal = null;
+		sfx('report');
 		persist(true);
 		if (!practice) {
 			saveResult({
@@ -308,7 +356,8 @@
 	{#if nixies}<Nixie {value} {tubes} />{:else}<b class="num">{value}</b>{/if}
 {/snippet}
 
-<main class="room" data-theme={themeId}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<main class="room" data-theme={themeId} onpointerdown={onConsolePress}>
 	{#if loadError}
 		<section class="status">
 			<h1>TRANSMISSION FAILURE</h1>
@@ -337,6 +386,7 @@
 					<button class="key small" onclick={() => (showOrders = true)}>{L.orders}</button>
 				</div>
 				<div class="selector" role="group" aria-label="Console theme">
+					<button class="key small" class:armed={!soundOff} aria-pressed={!soundOff} onclick={toggleSound}>{L.sound}</button>
 					{#each THEME_ORDER as id (id)}
 						<button class="key small" class:lit={themeId === id} aria-pressed={themeId === id} onclick={() => pickTheme(id)}>
 							{THEMES[id].name}
@@ -575,7 +625,10 @@
 						</div>
 						<div class="guard" class:open={coverOpen}>
 							<button class="fire" disabled={!canRun || !coverOpen} onclick={execute}>{L.execute}</button>
-							<button class="cover" disabled={!canRun} aria-pressed={coverOpen} onclick={() => (coverOpen = !coverOpen)}>
+							<button class="cover" disabled={!canRun} aria-pressed={coverOpen} onclick={() => {
+									coverOpen = !coverOpen;
+									sfx('cover');
+								}}>
 								{coverOpen ? L.close : L.lift}
 							</button>
 						</div>
@@ -671,6 +724,7 @@
 		--lamp-on: radial-gradient(circle at 40% 35%, #ffc4b4, #ee4a32 60%, #9c1f10);
 		--lamp-glow: 0 0 10px rgba(238, 74, 50, 0.8);
 		--title-size: 30px;
+		--prompt: #7a1205;
 
 		min-height: 100dvh;
 		padding: clamp(0px, 1.4vw, 20px);
@@ -719,6 +773,7 @@
 		--lamp-on: radial-gradient(circle at 40% 35%, #ffd9a0, #ff8a2a 60%, #a84a05);
 		--lamp-glow: 0 0 10px rgba(255, 138, 42, 0.85);
 		--title-size: 28px;
+		--prompt: #ffb35c;
 	}
 
 	/* ---------- CHART: a printed sheet on a planner's table, marked by hand ---------- */
@@ -765,6 +820,7 @@
 		--lamp-off: none;
 		--lamp-on: none;
 		--title-size: 26px;
+		--prompt: #a01d16;
 	}
 
 	.status {
@@ -1106,7 +1162,7 @@
 	}
 	.prompt {
 		margin: 10px 0 2px;
-		color: var(--accent);
+		color: var(--prompt);
 		font-weight: 600;
 	}
 	.slider {
