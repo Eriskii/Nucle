@@ -185,12 +185,19 @@ The "Learn what you've done" page (`debrief.ts`, `src/lib/ui/debrief/`) reads th
 | Shock arrival | Distance divided by shock speed at each range's own pressure, integrated outward. Free air on the way down is half the surface-burst pressure (estimate) | Tested against G&D §2.32 and §3.09 |
 | Thermal pulse | Second maximum at 0.0417 W^0.44 s, with about 80% out by ten times that | G&D §7.85 |
 | Cloud rise | `1 - exp(-t / 90 s)` of final height at every yield (estimate) | Fitted to G&D Table 2.12 for 1 Mt |
-| Fireball growth, fallout dots, stem shape | Illustration only | **Game choice** |
+| Stem width | Half the cloud radius below 20 kt, falling to 0.15 of it at 1 Mt and above | G&D §2.17 |
+| Wilson condensation cloud | Peak at 1.6 s, lasting about a second at 21 kt, scaled by cube root of yield | G&D §2.50 |
+| Cloud colour | Reddish brown while hot, white as water condenses, over a time that grows with yield (estimate) | G&D §2.08 |
+| Bomb fall | Simple drag, tuned to the published fall times of Little Boy, Fat Man and Tsar Bomba. Other release heights are placeholders, and the page says so | Tested in `debrief.test.ts` |
+| Reentry | Starts at 100 km and 6.7 km/s, then a simple atmosphere (estimate) | Generic ICBM figures, nothing type-specific was found |
+| Fireball growth, billows, dust, fires, skyline, fallout veils, drawn cap thickness | Illustration only | **Game choice** |
 | Energy split | 5% prompt radiation, 10% × fission share residual, the model's thermal share, and the rest blast | Rule of thumb, G&D §1.25 to §1.27 |
 | Second opinion | OTA Fig. 1 bands applied to each cell's peak overpressure | OTA 1979, blast only |
 | Place totals | Each cell counts toward its nearest named city, within 25 km or 4 cells | **Game choice**, not city limits |
 
-Weapon dimensions, with a source and confidence for each, are in `src/lib/game/weaponfacts.ts`. Outlines are external shapes traced by eye, to scale but approximate.
+Weapon dimensions, with a source and confidence for each, are in `src/lib/game/weaponfacts.ts`. Outlines and 3D casings (`weaponlooks.ts`) are external shapes traced by eye, to scale but approximate. Paint follows museum displays where one exists, and the page says when that evidence is weak. Internals are deliberately not modelled.
+
+The side view is a raymarched WebGL2 scene (`blastShader.ts`) at one scale for both axes. Geometry comes in from the effects model through `blastState.ts`. Without WebGL2 it falls back to a plain drawing with the same numbers.
 
 ## What's stored
 

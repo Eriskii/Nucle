@@ -279,7 +279,7 @@
 				{/each}
 			</div>
 			{#key active}
-				<BurstPanel r={d.bursts[active]} {F} {t} {placeName} />
+				<BurstPanel r={d.bursts[active]} {F} {t} {placeName} precip={sim.weather.precip} grade={theme.id === 'paper' ? 1 : 0} />
 			{/key}
 		</section>
 

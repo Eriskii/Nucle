@@ -1,11 +1,26 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import type { BurstReport } from '#lib/game/debrief.ts';
-	import { peakWindMs, psiProfile } from '#lib/game/effects.ts';
+	import { DELIVERY, flightFor, type DeliveryKind } from '#lib/game/delivery.ts';
+	import { peakWindMs, type Precip } from '#lib/game/effects.ts';
+	import { WEAPON_FACTS } from '#lib/game/weaponfacts.ts';
+	import { BlastEngine } from './blastEngine.ts';
+	import { momentAt, sceneFor, type Trail } from './blastState.ts';
 	import type { Fmt } from './fmt.ts';
+	import { Governor } from './gl.ts';
+	import WeaponView from './WeaponView.svelte';
+
+	export interface Stage {
+		id: string;
+		title: string;
+		body: string;
+	}
 
 	export interface SideText {
-		stages: { id: string; title: string; body: string }[];
+		stages: Stage[];
+		delivery: Record<DeliveryKind, Stage[]>;
+		fuze: Stage;
+		fuzeSurface: Stage;
 		play: string;
 		pause: string;
 		time: string;
@@ -20,41 +35,100 @@
 		rows: { psi20: string; psi5: string; psi1: string; burns: string; radiation: string };
 		magnified: (x: string) => string;
 		desc: string;
+		flightLine: (alt: string, speed: string) => string;
+		tracking: string;
+		trackingGeneric: string;
+		enlarged: string;
+		raised: string;
+		illustrative: string;
+		liveNote: string;
 	}
 
 	interface Props {
 		r: BurstReport;
 		F: Fmt;
 		text: SideText;
+		precip: Precip;
+		/** 1 for the chart theme, which shows the scene as a period print. */
+		grade: number;
 	}
 
-	let { r, F, text }: Props = $props();
+	let { r, F, text, precip, grade }: Props = $props();
 
 	const E_KM = 6371;
-	// Fits G&D Table 2.12 for 1 Mt: 6 of about 12 miles at 1.1 min, 10 at 2.5 min. Used at every yield, an estimate.
-	const RISE_S = 90;
 	const T_MIN = -3;
 	const T_MAX = Math.log10(3600);
+	/** Share of the slider given to the time before detonation. */
+	const PRE = 0.3;
 
 	let width = $state(820);
-	let logT = $state(1);
+	let u = $state(0.13);
 	let playing = $state(false);
+	let canvas = $state<HTMLCanvasElement | null>(null);
+	let live = $state(true);
 	let raf = 0;
 	let last = 0;
+	let churn = 40;
+	let engine: BlastEngine | null = null;
+	let visible = true;
+	let observer: IntersectionObserver | null = null;
+	const governor = new Governor(30, 0.45);
+	const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-	const t = $derived(Math.pow(10, logT));
-	const H = $derived(width < 620 ? 440 : 520);
+	const id = $derived(r.burst.weapon.id);
+	const delivery = $derived(DELIVERY[id]);
+	const flight = $derived(flightFor(id, r.burst.hobM));
+
+	/** Slider position to seconds from detonation. Before zero it runs evenly; after, each stretch is ten times longer. */
+	const toT = (v: number) => {
+		if (v < PRE) return -flight.durationS * Math.pow(1 - v / PRE, 1.35);
+		const f = (v - PRE) / (1 - PRE);
+		return Math.pow(10, T_MIN + f * (T_MAX - T_MIN));
+	};
+	const fromT = (s: number) => {
+		if (s < 0) return PRE * (1 - Math.pow(-s / flight.durationS, 1 / 1.35));
+		return PRE + ((Math.log10(Math.max(s, 1e-3)) - T_MIN) / (T_MAX - T_MIN)) * (1 - PRE);
+	};
+	const t = $derived(toT(u));
+	const before = $derived(u < PRE);
+	const now = $derived(flight.at(Math.min(t, 0)));
+	const m = $derived(momentAt(r, t));
+
+	const H = $derived(width < 620 ? 460 : 560);
 	const RULERS = 104;
 	const groundY = $derived(H - RULERS);
 	const hobKm = $derived(r.burst.hobM / 1000);
 	const cloudTopKm = $derived(r.cloud.centreKm + r.cloud.halfThicknessKm);
 	const reach = $derived(Math.max(r.rings.psi1, r.rings.thermal, r.rings.radiation, r.cloud.radiusKm, r.fireballKm, 0.05) * 1.1);
-	// One scale for both axes, so the picture has the true shape.
-	const ppk = $derived(Math.min((width / 2 - 14) / reach, (groundY - 26) / Math.max(cloudTopKm * 1.08, hobKm * 1.1)));
-	const X = (km: number) => width / 2 + km * ppk;
+	const ppkBase = $derived(Math.min((width / 2 - 14) / reach, (groundY - 26) / Math.max(cloudTopKm * 1.08, hobKm * 1.1)));
+
+	// One scale for both axes, always. The camera backs off to keep the weapon or the drifting cap in frame.
+	const camera = $derived.by(() => {
+		let ppk = ppkBase;
+		let centre = width / 2;
+		if (before) {
+			const altKm = now.altM / 1000;
+			ppk = Math.min(ppk, (groundY - 34) / Math.max(altKm * 1.12, 0.01));
+			const x = Math.abs(now.xM) / 1000;
+			if (x > 0) ppk = Math.min(ppk, (width / 2 - 60) / x);
+		} else {
+			const span = m.capDrift + m.capR * 1.25;
+			const room = width * 0.46;
+			if (span * ppk > room) {
+				const shift = Math.min(width * 0.26, span * ppk - room);
+				centre = width / 2 - shift;
+				ppk = Math.min(ppk, (width - centre - 16) / span);
+			}
+		}
+		return { ppk, centre };
+	});
+	const ppk = $derived(camera.ppk);
+	const centre = $derived(camera.centre);
+
+	const X = (km: number) => centre + km * ppk;
 	const drop = (km: number) => (km * km) / (2 * E_KM);
 	const Y = (alt: number, km = 0) => groundY - (alt - drop(km)) * ppk;
-	const viewKm = $derived((width / 2) / ppk);
+	const viewKm = $derived(Math.max(centre, width - centre) / ppk);
 
 	const groundPath = $derived.by(() => {
 		let d = '';
@@ -64,118 +138,107 @@
 		}
 		return d;
 	});
-	const landPath = $derived(`${groundPath}L${width} ${H}L0 ${H}Z`);
 
-	// ---- time ---------------------------------------------------------------------------------
-	const tMax = $derived(r.thermalMaxS);
-	const tForm = $derived(tMax * 10);
-	const pulse = $derived(Math.min(1, (t / tMax) * Math.exp(1 - t / tMax)));
-	const flash = $derived(Math.max(0, pulse - 0.1));
-	const rise = $derived(1 - Math.exp(-t / RISE_S));
+	// ---- before detonation --------------------------------------------------------------------
+	const carried = $derived(delivery.kind === 'gravity' || delivery.kind === 'retarded');
+	const released = $derived(before && carried && t >= -flight.releaseS);
+	const wx = $derived(now.xM / 1000);
+	const walt = $derived(now.altM / 1000);
+	/** The aircraft flies on after release, level, at its own speed. */
+	const craft = $derived.by(() => {
+		if (!carried || !before) return null;
+		const relX = flight.at(-flight.releaseS).xM / 1000;
+		const startAlt = flight.at(-flight.durationS).altM / 1000;
+		const x = t < -flight.releaseS ? wx : relX + ((t + flight.releaseS) * delivery.speedMs) / 1000;
+		return { x, alt: startAlt };
+	});
 
-	const fireR = $derived(r.fireballKm * Math.min(1, Math.pow(t / tForm, 0.4)));
-	const fireAlt = $derived(hobKm + Math.max(0, r.cloud.centreKm - hobKm) * rise);
-	const fireOpacity = $derived(t < tForm ? 1 : Math.max(0, 1 - (t - tForm) / (tForm * 6 + 4)));
-
-	const shockKm = $derived.by(() => {
-		const s = r.shock;
-		if (!s.length || t < s[0].s) return 0;
-		for (let i = 1; i < s.length; i++) {
-			if (t <= s[i].s) return s[i - 1].km + ((t - s[i - 1].s) / Math.max(s[i].s - s[i - 1].s, 1e-9)) * (s[i].km - s[i - 1].km);
+	const trail = $derived.by<Trail>(() => {
+		if (!before) return { kind: 0, head: [0, 0], tail: [0, 0], width: 0 };
+		const k = delivery.kind;
+		if (craft && craft.alt > 6.5) {
+			return { kind: 1, head: [craft.x, craft.alt], tail: [craft.x - 26, craft.alt], width: 0.012 };
 		}
-		// Past the table the front carries on at the speed of sound.
-		return s[s.length - 1].km + 0.34 * (t - s[s.length - 1].s);
-	});
-	/** Slant radius of the front. Before it touches ground it scales from the first touch. */
-	const shockSlant = $derived.by(() => {
-		const s = r.shock;
-		if (!s.length) return 0;
-		if (t < s[0].s) return Math.hypot(s[0].km, hobKm) * Math.pow(t / s[0].s, 0.4);
-		return Math.hypot(shockKm, hobKm);
-	});
-	const psiNow = $derived(shockKm > 0 ? psiProfile(r.burst.kt, r.burst.hobM)(shockKm) : 0);
-	const shockVisible = $derived(shockSlant > 0 && (psiNow >= 0.3 || shockKm === 0));
-
-	const capOpacity = $derived(Math.min(1, Math.max(0, (t - tForm * 0.4) / (tForm * 2 + 0.5))));
-	const capAlt = $derived(hobKm + Math.max(0.01, r.cloud.centreKm - hobKm) * rise);
-	const capR = $derived(Math.max(r.fireballKm * 0.9, r.cloud.radiusKm * Math.pow(rise, 0.7)));
-	const capH = $derived(Math.max(r.fireballKm * 0.7, r.cloud.halfThicknessKm * Math.pow(rise, 0.6)));
-	const capDrift = $derived((r.winds.cap * 1.609344 * Math.max(0, t - 60)) / 3600);
-	// The stem thins out once the cloud has stopped rising.
-	const stemOpacity = $derived((0.3 + 0.7 * r.coupling) * Math.max(0.25, 1 - Math.max(0, t - 600) / 2400));
-	const stemPath = $derived.by(() => {
-		const base = capR * 0.28;
-		const neck = capR * 0.16;
-		const top = capAlt - capH * 0.6;
-		const bottomKm = 0;
-		const topKm = capDrift;
-		const xb = X(bottomKm);
-		const xt = X(topKm);
-		const yb = Y(0);
-		const yt = Y(top);
-		const ym = (yb + yt) / 2;
-		return `M${xb - base * ppk} ${yb} C${xb - neck * ppk} ${ym} ${xt - neck * ppk} ${ym} ${xt - neck * 1.4 * ppk} ${yt} L${xt + neck * 1.4 * ppk} ${yt} C${xt + neck * ppk} ${ym} ${xb + neck * ppk} ${ym} ${xb + base * ppk} ${yb}Z`;
-	});
-	// Lobes around the cap, fixed once so the cloud doesn't shimmer as time moves.
-	const LOBES = [
-		[-0.82, 0.05, 0.34],
-		[-0.55, 0.5, 0.42],
-		[-0.18, 0.74, 0.46],
-		[0.2, 0.72, 0.45],
-		[0.58, 0.48, 0.42],
-		[0.84, 0.03, 0.33],
-		[-0.48, -0.25, 0.38],
-		[0, -0.3, 0.42],
-		[0.48, -0.25, 0.38]
-	];
-
-	// Illustrative fall of debris: it lands downwind of where it left the cloud.
-	const hash = (n: number) => {
-		let h = Math.imul(n + 1, 0x9e3779b1);
-		h = Math.imul(h ^ (h >>> 15), 0x85ebca77);
-		return ((h ^ (h >>> 13)) >>> 0) / 4294967296;
-	};
-	const seeds = Array.from({ length: 160 }, (_, i) => ({ u: hash(i * 3), v: hash(i * 3 + 1), w: hash(i * 3 + 2) }));
-	const particles = $derived.by(() => {
-		if (r.exo || r.coupling <= 0 || t < 90) return [];
-		const out: { x: number; y: number }[] = [];
-		const speed = (r.winds.cap * 1.609344) / 3600;
-		const count = Math.round(seeds.length * Math.min(1, 0.25 + r.coupling));
-		for (let i = 0; i < count; i++) {
-			const s = seeds[i];
-			const released = 60 + s.u * 2400;
-			if (t < released) continue;
-			// Heavy grit falls in minutes, fine dust takes far longer. Lower air moves slower than the cap.
-			const fall = capAlt * ((t - released) / (500 + s.v * s.v * 4500));
-			const alt = capAlt + (s.w - 0.5) * capH - fall;
-			if (alt < 0) continue;
-			const km = speed * released + (s.w - 0.5) * capR * 1.7 + speed * (t - released) * 0.6;
-			out.push({ x: X(km), y: Y(alt, km) });
+		if ((k === 'reentry' || k === 'rocket') && walt < 85) {
+			const a = (now.diveDeg * Math.PI) / 180;
+			const back = Math.min(40, (now.speedMs / 1000) * 3.5);
+			return { kind: 2, head: [wx, walt], tail: [wx - Math.cos(a) * back, walt + Math.sin(a) * back], width: Math.max(0.012, walt * 0.0035) };
 		}
+		return { kind: 0, head: [0, 0], tail: [0, 0], width: 0 };
+	});
+
+	// What the tracking camera follows. A warhead inside a missile isn't public, so reentry shows a generic vehicle.
+	const trackId = $derived(delivery.kind === 'reentry' ? 'w87' : id === 'w80' ? 'agm86' : id === 'w70' ? 'lance' : id);
+	const trackFacts = $derived(
+		id === 'w80'
+			? { lengthM: 6.3, diameterM: 0.62, year: '', source: '', confidence: 'secondary' as const, outline: 'torpedo' as const }
+			: id === 'w70'
+				? { lengthM: 6.4, diameterM: 0.56, year: '', source: '', confidence: 'secondary' as const, outline: 'missile' as const }
+				: WEAPON_FACTS[trackId]
+	);
+	const canTrack = $derived(!!trackFacts?.outline && delivery.kind !== 'unbuilt' && delivery.kind !== 'emplaced');
+	const air = $derived(
+		before
+			? {
+					altKm: walt,
+					speedMs: now.speedMs,
+					time: t,
+					chute: flight.chuteS > 0 && t > -flight.chuteS ? Math.min(1, (t + flight.chuteS) / 1.4) : 0,
+					plasma: delivery.kind === 'reentry' ? Math.max(0, Math.min(1, (85 - walt) / 30)) * Math.max(0.15, Math.min(1, walt / 14)) : 0,
+					white: t > -0.25 ? (t + 0.25) / 0.25 : 0,
+					diveDeg: now.diveDeg
+				}
+			: null
+	);
+
+	// ---- stages -------------------------------------------------------------------------------
+	const preStages = $derived([...text.delivery[delivery.kind], r.burst.hobM === 0 ? text.fuzeSurface : text.fuze]);
+	const stages = $derived([...preStages, ...text.stages]);
+	const preTimes = $derived.by(() => {
+		const count = preStages.length - 1;
+		const out: number[] = [];
+		if (carried) {
+			out.push(-flight.durationS * 0.92, -flight.releaseS * 0.985);
+			while (out.length < count) out.push(-flight.releaseS * 0.42);
+		} else {
+			for (let i = 0; i < count; i++) out.push(-flight.durationS * (0.94 - (0.72 * i) / Math.max(count, 1)));
+		}
+		out.push(-Math.min(0.7, flight.durationS * 0.1));
 		return out;
 	});
-
+	const postTimes = $derived([r.thermalMaxS * 0.5, r.thermalMaxS * 7, Math.min(r.shock.length ? r.shock[r.shock.length - 1].s * 0.4 : 20, 45), 240, 1800]);
+	const stageTimes = $derived([...preTimes, ...postTimes]);
 	const stageIndex = $derived.by(() => {
-		if (t < tMax * 2) return 0;
-		if (t < tForm) return 1;
+		if (before) {
+			let best = 0;
+			for (let i = 1; i < preTimes.length; i++) {
+				// A stage takes over a little before its marker, once it's nearer than the last one.
+				if (t >= (preTimes[i] + preTimes[i - 1]) / 2) best = i;
+			}
+			return best;
+		}
+		const tMax = r.thermalMaxS;
 		const end = r.shock.length ? r.shock[r.shock.length - 1].s : 30;
-		if (t < Math.min(end, 60)) return 2;
-		if (t < 900 || r.coupling <= 0) return 3;
-		return 4;
+		const post = t < tMax * 2 ? 0 : t < tMax * 10 ? 1 : t < Math.min(end, 60) ? 2 : t < 900 || r.coupling <= 0 ? 3 : 4;
+		return preStages.length + post;
 	});
-	const stage = $derived(text.stages[Math.min(stageIndex, text.stages.length - 1)]);
-	const stageTimes = $derived([tMax * 0.5, tForm * 0.7, Math.min(r.shock.length ? r.shock[r.shock.length - 1].s * 0.4 : 20, 45), 240, 1800]);
+	const stage = $derived(stages[Math.min(stageIndex, stages.length - 1)]);
+	const shockVisible = $derived(m.shockSlant > 0 && (m.psi >= 0.3 || m.shockKm === 0));
 
 	const rulers = $derived(
 		[
-			{ id: 'psi20', label: text.rows.psi20, km: r.rings.psi20, color: 'var(--seq3)', blast: true },
-			{ id: 'psi5', label: text.rows.psi5, km: r.rings.psi5, color: 'var(--seq2)', blast: true },
-			{ id: 'psi1', label: text.rows.psi1, km: r.rings.psi1, color: 'var(--seq1)', blast: true },
-			{ id: 'burns', label: text.rows.burns, km: r.rings.thermal, color: 'var(--c-burns)', blast: false },
-			{ id: 'rad', label: text.rows.radiation, km: r.rings.radiation, color: 'var(--c-radiation)', blast: false }
+			{ id: 'psi20', label: text.rows.psi20, km: r.rings.psi20, color: 'var(--on-seq3)', blast: true },
+			{ id: 'psi5', label: text.rows.psi5, km: r.rings.psi5, color: 'var(--on-seq2)', blast: true },
+			{ id: 'psi1', label: text.rows.psi1, km: r.rings.psi1, color: 'var(--on-seq1)', blast: true },
+			{ id: 'burns', label: text.rows.burns, km: r.rings.thermal, color: '#ff8a3c', blast: false },
+			{ id: 'rad', label: text.rows.radiation, km: r.rings.radiation, color: '#58b4ee', blast: false }
 		].filter((x) => x.km > 0)
 	);
 
+	const nice = (raw: number) => {
+		const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+		return [1, 2, 5, 10].map((k) => k * mag).find((s) => s >= raw) ?? raw;
+	};
 	const refs = $derived(
 		[
 			{ km: 8.85, label: text.refs.everest },
@@ -183,327 +246,364 @@
 			{ km: 50, label: text.refs.stratopause }
 		].filter((x) => x.km * ppk > 26 && Y(x.km) > 14)
 	);
-
 	const altTicks = $derived.by(() => {
 		const top = (groundY - 16) / ppk;
-		const raw = top / 5;
-		const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-		const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
+		const step = nice(top / 5);
 		const out: number[] = [];
 		for (let v = step; v < top; v += step) out.push(+v.toPrecision(6));
 		return out;
 	});
 	const groundTicks = $derived.by(() => {
-		const raw = viewKm / 3;
-		const mag = Math.pow(10, Math.floor(Math.log10(raw)));
-		const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
+		const step = nice(viewKm / 3);
 		const out: number[] = [];
-		for (let v = step; v < viewKm * 0.96; v += step) out.push(+v.toPrecision(6));
+		for (let v = step; v < viewKm * 0.96; v += step) if (X(-v) > 30) out.push(+v.toPrecision(6));
 		return out;
 	});
 
 	// In the first moments everything is too small to see at true scale, so an inset magnifies it.
 	const INSET_W = 210;
 	const INSET_H = 150;
-	const insetKm = $derived(Math.max(fireR * 1.25, hobKm * 1.15, Math.min(shockSlant, viewKm) * 1.15, 0.01));
+	const insetKm = $derived(Math.max(m.fireR * 1.25, hobKm * 1.15, Math.min(m.shockSlant, viewKm) * 1.15, 0.01));
 	const insetPpk = $derived((INSET_W / 2 - 6) / insetKm);
-	const showInset = $derived(insetKm * ppk < 100 && t < 60);
-	const insetZoom = $derived(insetPpk / ppk);
+	const showInset = $derived(!before && insetKm * ppk < 100 && t < 60);
 	const inGround = INSET_H - 18;
 
-	function frame(now: number) {
-		if (!playing) return;
-		logT = Math.min(T_MAX, logT + ((now - last) / 1000) * 0.42);
-		last = now;
-		if (logT >= T_MAX) {
-			playing = false;
+	// ---- drawing ------------------------------------------------------------------------------
+	function drawScene(interval: number) {
+		if (!engine) return;
+		if (interval > 0) governor.note(interval);
+		const scene = sceneFor(r, t, churn, { width, height: H, ppk, centreX: centre, groundY: RULERS }, precip, grade, trail);
+		engine.render(scene, governor.scale, Math.min(window.devicePixelRatio || 1, 1.5));
+	}
+
+	let dirty = true;
+	function frame(ts: number) {
+		raf = requestAnimationFrame(frame);
+		const dt = (ts - last) / 1000;
+		if (!visible || !engine) {
+			last = ts;
 			return;
 		}
-		raf = requestAnimationFrame(frame);
+		// No more than one fresh picture per 33 ms, and none when the viewer asked for less motion and nothing moved.
+		if (dt < 0.03) return;
+		last = ts;
+		if (playing) {
+			// Real time is hopeless across seven decades, so the slider moves at a steady pace instead.
+			u = Math.min(1, u + dt * 0.042);
+			if (u >= 1) playing = false;
+		}
+		if (!reduced) churn += Math.min(dt, 0.1) * 1.3;
+		if (reduced && !playing && !dirty) return;
+		dirty = false;
+		drawScene(Math.min(dt * 1000, 200));
 	}
+	$effect(() => {
+		void [u, width, H, precip, grade];
+		dirty = true;
+	});
+
 	function toggle() {
 		playing = !playing;
-		if (playing) {
-			if (logT >= T_MAX - 0.01) logT = T_MIN;
-			last = performance.now();
-			raf = requestAnimationFrame(frame);
-		} else cancelAnimationFrame(raf);
+		if (playing && u >= 0.999) u = 0;
 	}
 	function jump(i: number) {
 		playing = false;
-		cancelAnimationFrame(raf);
-		logT = Math.log10(Math.max(0.001, stageTimes[i]));
+		u = fromT(stageTimes[i]);
 	}
-	onDestroy(() => cancelAnimationFrame(raf));
 
-	const uid = $derived(`sv${r.index}`);
+	onMount(() => {
+		if (canvas) {
+			try {
+				engine = new BlastEngine(canvas);
+				observer = new IntersectionObserver((entries) => (visible = entries[0].isIntersecting));
+				observer.observe(canvas);
+			} catch {
+				engine = null;
+				live = false;
+			}
+		} else live = false;
+		last = performance.now();
+		raf = requestAnimationFrame(frame);
+	});
+	onDestroy(() => {
+		cancelAnimationFrame(raf);
+		observer?.disconnect();
+		engine?.destroy();
+	});
+
+	// A rough outline of the carrier: seen from the side, pointing right.
+	const PLANE = 'M-16 0 L-10 -1.6 L9 -1.6 L14 0 L9 1.6 L-10 1.6 Z M-13 -1 L-17 -6 L-14 -6 L-9 -1 Z M-3 -1 L-7 -3 L3 -3 L4 -1 Z';
+	const MISSILE = 'M-8 -1 L5 -1 L9 0 L5 1 L-8 1 Z M-7 -1 L-10 -3.4 L-8.6 -3.4 L-5 -1 Z M-3 1 L-1 3.6 L1 3.6 L0 1 Z';
 </script>
 
-<figure class="side" bind:clientWidth={width}>
-	<svg {width} height={H} role="img" aria-label={text.desc}>
-		<defs>
-			<linearGradient id={`${uid}-sky`} x1="0" y1="0" x2="0" y2="1">
-				<stop offset="0" stop-color="var(--sky-top)" />
-				<stop offset="1" stop-color="var(--sky-low)" />
-			</linearGradient>
-			<radialGradient id={`${uid}-fire`}>
-				<stop offset="0" stop-color="var(--fire-core)" />
-				<stop offset="0.55" stop-color="var(--fire-mid)" />
-				<stop offset="1" stop-color="var(--fire-edge)" />
-			</radialGradient>
-			<linearGradient id={`${uid}-cloud`} x1="0" y1="0" x2="0" y2="1">
-				<stop offset="0" stop-color="var(--cloud-hi)" />
-				<stop offset="1" stop-color="var(--cloud-lo)" />
-			</linearGradient>
-			<linearGradient id={`${uid}-stem`} x1="0" y1="0" x2="0" y2="1">
-				<stop offset="0" stop-color="var(--cloud-lo)" />
-				<stop offset="1" stop-color="var(--dust)" />
-			</linearGradient>
-			<clipPath id={`${uid}-air`}>
-				<path d={`${groundPath}L${width} 0L0 0Z`} />
-			</clipPath>
-		</defs>
-
-		<rect {width} height={groundY + 40} fill={`url(#${uid}-sky)`} />
-
-		<!-- Altitude scale and things to compare against. -->
-		{#each altTicks as a (a)}
-			<line class="alt-line" x1={0} x2={width} y1={Y(a)} y2={Y(a)} />
-			<text class="alt" x={6} y={Y(a) - 3}>{F.km(a)}</text>
-		{/each}
-		{#each refs as ref (ref.km)}
-			<line class="ref-line" x1={width - 170} x2={width} y1={Y(ref.km)} y2={Y(ref.km)} />
-			<text class="ref" x={width - 6} y={Y(ref.km) - 3} text-anchor="end">{ref.label}</text>
-		{/each}
-
-		<g clip-path={`url(#${uid}-air)`}>
-			<!-- Heat reaches the burn radius at the speed of light, while the fireball radiates. -->
-			{#if pulse > 0.03 && r.rings.thermal > 0}
-				<path
-					d={`M${X(0)} ${Y(hobKm)} L${X(-r.rings.thermal)} ${Y(0, r.rings.thermal)} L${X(r.rings.thermal)} ${Y(0, r.rings.thermal)}Z`}
-					fill="var(--c-burns)"
-					opacity={pulse * 0.28}
-				/>
+<figure class="side" bind:clientWidth={width} class:live>
+	<div class="stagebox" style:height={`${H}px`}>
+		{#if live}
+			<canvas bind:this={canvas} style:width={`${width}px`} style:height={`${H}px`} aria-label={text.desc}></canvas>
+		{/if}
+		<svg {width} height={H} class="over" aria-hidden={live}>
+			{#if !live}
+				<rect {width} height={H} class="plain-sky" />
+				{#if m.capOpacity > 0}
+					<rect x={X(m.capDrift - m.capR * 0.15)} y={Y(m.capAlt)} width={m.capR * 0.3 * ppk} height={Math.max(0, groundY - Y(m.capAlt))} class="plain-cloud" opacity={m.capOpacity * 0.7} />
+					<ellipse cx={X(m.capDrift)} cy={Y(m.capAlt)} rx={m.capR * ppk} ry={m.capH * ppk} class="plain-cloud" opacity={m.capOpacity} />
+				{/if}
+				{#if !before && m.fireR > 0 && t < r.thermalMaxS * 60}
+					<circle cx={X(0)} cy={Y(m.fireAlt)} r={Math.max(2, m.fireR * ppk)} class="plain-fire" />
+				{/if}
+				{#if shockVisible}<circle cx={X(0)} cy={Y(hobKm)} r={m.shockSlant * ppk} class="plain-shock" />{/if}
+				<path d={`${groundPath}L${width} ${H}L0 ${H}Z`} class="plain-land" />
 			{/if}
 
-			<!-- Mushroom cloud, drifting downwind to the right. -->
-			{#if capOpacity > 0}
-				<g opacity={capOpacity}>
-					<path d={stemPath} fill={`url(#${uid}-stem)`} opacity={stemOpacity} />
-					{#each LOBES as [lx, ly, lr], i (i)}
-						<ellipse
-							cx={X(capDrift + lx * capR * 0.8)}
-							cy={Y(capAlt + ly * capH)}
-							rx={Math.max(1.5, lr * capR * ppk)}
-							ry={Math.max(1.5, lr * capH * 1.15 * ppk)}
-							fill={`url(#${uid}-cloud)`}
-						/>
-					{/each}
-				</g>
-			{/if}
-
-			<!-- Debris coming down: illustrative, not one particle per anything. -->
-			{#each particles as p, i (i)}
-				<circle cx={p.x} cy={p.y} r="1.5" class="fall" />
+			{#each altTicks as a (a)}
+				<line class="alt-line" x1={0} x2={width} y1={Y(a)} y2={Y(a)} />
+				<text class="alt" x={6} y={Y(a) - 3}>{F.km(a)}</text>
+			{/each}
+			{#each refs as ref (ref.km)}
+				<line class="ref-line" x1={width - 170} x2={width} y1={Y(ref.km)} y2={Y(ref.km)} />
+				<text class="ref" x={width - 6} y={Y(ref.km) - 3} text-anchor="end">{ref.label}</text>
 			{/each}
 
-			<!-- Fireball -->
-			{#if fireOpacity > 0}
-				<circle cx={X(0)} cy={Y(fireAlt)} r={Math.max(2, fireR * ppk)} fill={`url(#${uid}-fire)`} opacity={fireOpacity} />
+			{#if hobKm > 0 && hobKm * ppk > 10 && !before}
+				<line class="hob" x1={X(0)} x2={X(0)} y1={Y(0)} y2={Y(hobKm)} />
+				<text class="hob-label" x={X(0) - 6} y={(Y(0) + Y(hobKm)) / 2} text-anchor="end">{text.height} {F.km(hobKm)}</text>
 			{/if}
 
-			<!-- Shock: the incident front from the burst, and its reflection off the ground. -->
-			{#if shockVisible}
-				<circle cx={X(0)} cy={Y(hobKm)} r={shockSlant * ppk} class="shock" />
-				{#if hobKm > 0 && shockKm > 0}
-					<circle cx={X(0)} cy={Y(-hobKm)} r={shockSlant * ppk} class="shock reflected" />
+			<!-- Where it's going to happen, marked before it does. -->
+			{#if before && hobKm * ppk > 2}
+				<line class="aim" x1={X(0)} x2={X(0)} y1={Y(0)} y2={Y(hobKm)} />
+				<circle class="aim" cx={X(0)} cy={Y(hobKm)} r="4" />
+			{/if}
+
+			<line class="gz" x1={X(0)} x2={X(0)} y1={groundY} y2={H - 4} />
+
+			<!-- Rulers under the ground: each range as a bar from ground zero, filling as the effect arrives. -->
+			{#each rulers as row, i (row.id)}
+				{@const y = groundY + 13 + i * 15}
+				{@const reached = before ? 0 : row.blast ? Math.min(row.km, m.shockKm) : row.km}
+				<rect class="track" x={X(0)} y={y - 5} width={Math.max(1, row.km * ppk)} height="9" rx="2" />
+				{#if reached > 0}
+					<rect x={X(0)} y={y - 5} width={Math.max(1, reached * ppk)} height="9" rx="2" fill={row.color} />
 				{/if}
+				<text class="row" x={Math.max(X(0) - 8, 0)} y={y + 3} text-anchor="end">{row.label}</text>
+				<text class="row val" x={Math.min(X(row.km) + 6, width - 56)} y={y + 3}>{F.km(row.km)}</text>
+			{/each}
+
+			{#each groundTicks as g (g)}
+				<text class="alt" x={X(-g)} y={H - 6} text-anchor="middle">{F.km(g)}</text>
+			{/each}
+			<text class="dir" x={8} y={groundY - 5}>← {text.upwind}</text>
+			<text class="dir" x={width - 8} y={groundY - 5} text-anchor="end">{text.downwind} →</text>
+
+			{#if shockVisible && m.shockKm > 0 && X(m.shockKm) < width}
+				<line class="front" x1={X(m.shockKm)} x2={X(m.shockKm)} y1={Y(0, m.shockKm)} y2={Y(0, m.shockKm) - 22} />
 			{/if}
-		</g>
 
-		<!-- Height of burst -->
-		{#if hobKm > 0 && hobKm * ppk > 10}
-			<line class="hob" x1={X(0)} x2={X(0)} y1={Y(0)} y2={Y(hobKm)} />
-			<text class="hob-label" x={X(0) - 6} y={(Y(0) + Y(hobKm)) / 2} text-anchor="end">{text.height} {F.km(hobKm)}</text>
-		{/if}
-
-		<path d={landPath} class="land" />
-		<path d={groundPath} class="ground" />
-		<line class="gz" x1={X(0)} x2={X(0)} y1={groundY} y2={H - 4} />
-
-		<!-- Rulers under the ground: each range as a bar from ground zero, filling as the effect arrives. -->
-		{#each rulers as row, i (row.id)}
-			{@const y = groundY + 13 + i * 15}
-			{@const reached = row.blast ? Math.min(row.km, shockKm) : pulse > 0.01 || t > tMax ? row.km : 0}
-			<rect class="track" x={X(0)} y={y - 5} width={Math.max(1, row.km * ppk)} height="9" rx="2" />
-			{#if reached > 0}
-				<rect x={X(0)} y={y - 5} width={Math.max(1, reached * ppk)} height="9" rx="2" fill={row.color} />
+			<!-- The aircraft and the weapon, far too small to see at this scale, shown as markers. -->
+			{#if before && craft}
+				{@const cx = Math.min(width - 24, Math.max(24, X(craft.x)))}
+				<g class="mark" transform={`translate(${cx} ${Y(craft.alt)}) scale(1.5)`}><path d={PLANE} /></g>
+				<text class="mark-t" x={cx} y={Y(craft.alt) - 15} text-anchor="middle">{delivery.carrier}</text>
 			{/if}
-			<text class="row" x={Math.max(X(0) - 8, 0)} y={y + 3} text-anchor="end">{row.label}</text>
-			<text class="row val" x={Math.min(X(row.km) + 6, width - 56)} y={y + 3}>{F.km(row.km)}</text>
-		{/each}
+			{#if before && (released || !carried) && delivery.kind !== 'unbuilt'}
+				{#if delivery.kind === 'cruise' || delivery.kind === 'torpedo'}
+					<g class="mark" transform={`translate(${Math.max(14, X(wx))} ${Y(walt) - 3}) scale(1.4)`}><path d={MISSILE} /></g>
+				{:else}
+					<circle class="mark" cx={X(wx)} cy={Y(walt)} r="3" />
+				{/if}
+				<text class="mark-t" x={Math.min(width - 60, Math.max(60, X(wx) + 8))} y={Y(walt) - 9}>{F.km(walt)}</text>
+			{/if}
 
-		{#each groundTicks as g (g)}
-			<text class="alt" x={X(-g)} y={H - 6} text-anchor="middle">{F.km(g)}</text>
-		{/each}
-		<text class="dir" x={8} y={groundY - 5}>← {text.upwind}</text>
-		<text class="dir" x={width - 8} y={groundY - 5} text-anchor="end">{text.downwind} →</text>
-
-		<!-- Label on the front along the ground. -->
-		{#if shockKm > 0 && shockVisible && X(shockKm) < width}
-			<line class="front" x1={X(shockKm)} x2={X(shockKm)} y1={Y(0, shockKm)} y2={Y(0, shockKm) - 26} />
-		{/if}
-
-		<!-- The whole sky brightens at the flash. -->
-		{#if flash > 0}
-			<rect {width} height={groundY} class="flash" opacity={flash * 0.5} />
-		{/if}
-
-		{#if showInset}
-			<g transform="translate(46 12)">
-				<clipPath id={`${uid}-in`}><rect width={INSET_W} height={inGround} /></clipPath>
-				<rect width={INSET_W} height={INSET_H} class="inset" />
-				<g clip-path={`url(#${uid}-in)`}>
-					<rect width={INSET_W} height={inGround} fill={`url(#${uid}-sky)`} />
-					<circle cx={INSET_W / 2} cy={inGround - fireAlt * insetPpk} r={Math.max(2, fireR * insetPpk)} fill={`url(#${uid}-fire)`} opacity={fireOpacity} />
-					{#if shockVisible}
-						<circle cx={INSET_W / 2} cy={inGround - hobKm * insetPpk} r={shockSlant * insetPpk} class="shock" />
-					{/if}
+			<!-- The first second, magnified. -->
+			{#if showInset}
+				<g transform="translate(46 12)">
+					<clipPath id={`in${r.index}`}><rect width={INSET_W} height={inGround} /></clipPath>
+					<rect width={INSET_W} height={INSET_H} class="inset-bg" />
+					<g clip-path={`url(#in${r.index})`}>
+						{#if m.fireR > 0}
+							<circle cx={INSET_W / 2} cy={inGround - m.fireAlt * insetPpk} r={Math.max(2, m.fireR * insetPpk)} class="inset-fire" />
+						{/if}
+						{#if shockVisible}
+							<circle cx={INSET_W / 2} cy={inGround - hobKm * insetPpk} r={m.shockSlant * insetPpk} class="inset-shock" />
+						{/if}
+					</g>
+					<rect y={inGround} width={INSET_W} height={INSET_H - inGround} class="inset-land" />
+					<text class="alt in-text" x="5" y={INSET_H - 5}>{text.magnified(F.sig(insetPpk / ppk, 2))}</text>
+					<text class="alt in-text" x={INSET_W - 5} y={INSET_H - 5} text-anchor="end">{F.km(insetKm * 2)}</text>
 				</g>
-				<rect y={inGround} width={INSET_W} height={INSET_H - inGround} class="in-land" />
-				<line x1="0" x2={INSET_W} y1={inGround} y2={inGround} class="ground" />
-				<text class="alt in-text" x="5" y={INSET_H - 5}>{text.magnified(F.sig(insetZoom, 2))}</text>
-				<text class="alt in-text" x={INSET_W - 5} y={INSET_H - 5} text-anchor="end">{F.km(insetKm * 2)}</text>
-			</g>
+			{/if}
+		</svg>
+
+		<!-- Alongside the weapon as it comes down. -->
+		{#if live && canTrack && before && air && trackFacts && (released || !carried)}
+			<div class="tracking">
+				<WeaponView id={trackId} facts={trackFacts} height={width < 620 ? 96 : 148} {grade} {air} desc={text.tracking} />
+				<span>{delivery.kind === 'reentry' ? text.trackingGeneric : text.tracking}</span>
+			</div>
 		{/if}
-	</svg>
+	</div>
 
 	<div class="readout">
 		<button type="button" class="dkey" onclick={toggle}>{playing ? text.pause : text.play}</button>
 		<label class="scrub">
 			<span>{text.time}</span>
-			<input type="range" min={T_MIN} max={T_MAX} step="0.005" bind:value={logT} oninput={() => (playing = false)} />
-			<output>T+{F.time(t)}</output>
+			<input type="range" min="0" max="1" step="0.001" bind:value={u} oninput={() => (playing = false)} />
+			<output>T{t < 0 ? '−' : '+'}{F.time(Math.abs(t))}</output>
 		</label>
 	</div>
 	<div class="stages" role="group" aria-label={text.time}>
-		{#each text.stages as s, i (s.id)}
+		{#each stages as s, i (s.id)}
+			{#if i === preStages.length}<i class="zero" aria-hidden="true"></i>{/if}
 			<button type="button" class="dkey" class:on={i === stageIndex} onclick={() => jump(i)} disabled={s.id === 'fallout' && r.coupling <= 0}>{s.title}</button>
 		{/each}
 	</div>
 	<p class="caption" aria-live="polite">
 		<b>{stage.title}.</b> {stage.body}
-		{#if shockKm > 0 && psiNow > 0}
-			{text.front(F.km(shockKm), F.psi(psiNow), F.wind(peakWindMs(psiNow)))}
-		{:else if shockKm > 0}
-			{text.pastFront}
+		{#if before && delivery.kind !== 'unbuilt' && delivery.kind !== 'emplaced'}
+			{text.flightLine(F.km(walt), F.wind(now.speedMs))}
 		{/if}
-		{#if capOpacity > 0.3}{text.cloudTop(F.km(capAlt + capH))}{/if}
+		{#if !before}
+			{#if m.shockKm > 0 && m.psi > 0}
+				{text.front(F.km(m.shockKm), F.psi(m.psi), F.wind(peakWindMs(m.psi)))}
+			{:else if m.shockKm > 0}
+				{text.pastFront}
+			{/if}
+			{#if m.capOpacity > 0.3}{text.cloudTop(F.km(m.capAlt + m.capH))}{/if}
+		{/if}
 	</p>
-	<p class="scale-note">{text.scale}</p>
+	<p class="scale-note">
+		{text.scale}
+		{#if before}{text.enlarged}{/if}
+		{#if before && delivery.illustrative}{text.illustrative}{/if}
+		{#if before && flight.raised}{text.raised}{/if}
+		{#if live}{text.liveNote}{/if}
+	</p>
 </figure>
 
 <style>
 	.side {
+		/* The scene is a photograph in every theme, so what's written on it stays light. */
+		--on-seq1: #8d7a3a;
+		--on-seq2: #d3a33c;
+		--on-seq3: #ffd46e;
 		margin: 0;
 		min-width: 0;
 	}
-	svg {
-		display: block;
+	.stagebox {
+		position: relative;
+		overflow: hidden;
 		border: 1px solid var(--d-rule);
-		background: var(--d-surface);
+		background: #0a0f18;
 	}
-	.alt-line {
-		stroke: var(--d-rule);
-		stroke-dasharray: 2 5;
+	canvas {
+		position: absolute;
+		inset: 0;
+		display: block;
 	}
-	.alt {
-		font: 10.5px var(--d-mono);
-		fill: var(--d-dim);
+	.over {
+		position: absolute;
+		inset: 0;
+		display: block;
 	}
-	.ref-line {
-		stroke: var(--d-dim);
-		stroke-dasharray: 5 4;
+	.plain-sky {
+		fill: var(--sky-low);
 	}
-	.ref {
-		font: 10.5px var(--d-mono);
-		fill: var(--d-fg);
-	}
-	.land {
+	.plain-land {
 		fill: var(--land);
 	}
-	.ground {
+	.plain-cloud {
+		fill: var(--cloud-lo);
+	}
+	.plain-fire {
+		fill: var(--fire-mid);
+	}
+	.plain-shock {
 		fill: none;
-		stroke: var(--d-fg);
-		stroke-width: 1.5;
+		stroke: var(--shock);
+	}
+	.alt-line {
+		stroke: rgba(255, 255, 255, 0.14);
+		stroke-dasharray: 2 5;
+	}
+	.alt,
+	.ref,
+	.row,
+	.dir,
+	.hob-label,
+	.mark-t {
+		font: 10.5px var(--d-mono);
+		fill: #f4efdd;
+		paint-order: stroke;
+		stroke: rgba(0, 0, 0, 0.55);
+		stroke-width: 2.5px;
+	}
+	.ref-line {
+		stroke: rgba(255, 255, 255, 0.4);
+		stroke-dasharray: 5 4;
 	}
 	.gz {
-		stroke: var(--d-dim);
+		stroke: rgba(255, 255, 255, 0.35);
 		stroke-dasharray: 2 3;
 	}
 	.hob {
-		stroke: var(--d-fg);
+		stroke: rgba(255, 255, 255, 0.55);
 		stroke-dasharray: 3 3;
 	}
-	.hob-label {
-		font: 11px var(--d-mono);
-		fill: var(--d-fg);
-		paint-order: stroke;
-		stroke: var(--d-surface);
-		stroke-width: 3px;
-	}
-	.shock {
+	.aim {
 		fill: none;
-		stroke: var(--shock);
-		stroke-width: 2;
-	}
-	.shock.reflected {
-		stroke-width: 1;
-		opacity: 0.55;
-		stroke-dasharray: 5 4;
+		stroke: #ff6a4a;
+		stroke-dasharray: 3 3;
 	}
 	.front {
-		stroke: var(--shock);
+		stroke: #fff;
 		stroke-width: 2;
 	}
-	.fall {
-		fill: var(--c-fallout);
-		opacity: 0.8;
-	}
-	.flash {
-		fill: var(--flash);
-		pointer-events: none;
-	}
-	.inset {
-		fill: none;
-		stroke: var(--d-dim);
-	}
-	.in-land {
-		fill: var(--land);
-	}
-	.in-text {
-		fill: var(--d-fg);
-	}
 	.track {
-		fill: var(--d-rule);
-	}
-	.row {
-		font: 10.5px var(--d-mono);
-		fill: var(--d-fg);
+		fill: rgba(255, 255, 255, 0.14);
 	}
 	.row.val {
-		fill: var(--d-fg);
 		font-weight: 700;
-		paint-order: stroke;
-		stroke: var(--land);
-		stroke-width: 3px;
 	}
-	.dir {
-		font: 10.5px var(--d-mono);
-		fill: var(--d-fg);
-		paint-order: stroke;
-		stroke: var(--d-surface);
-		stroke-width: 3px;
+	.mark {
+		fill: #10131a;
+		stroke: #f4efdd;
+		stroke-width: 0.8;
+	}
+	.mark-t {
+		font-weight: 700;
+	}
+	.inset-bg {
+		fill: rgba(70, 105, 155, 0.92);
+		stroke: rgba(255, 255, 255, 0.7);
+	}
+	.inset-land {
+		fill: #1b1810;
+	}
+	.inset-fire {
+		fill: #fff0b8;
+		filter: drop-shadow(0 0 6px #ffc24a);
+	}
+	.inset-shock {
+		fill: none;
+		stroke: #fff;
+		stroke-width: 1.5;
+	}
+	.tracking {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		width: min(40%, 270px);
+		border: 1px solid rgba(255, 255, 255, 0.6);
+		background: #000;
+		box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+	}
+	.tracking span {
+		position: absolute;
+		left: 6px;
+		top: 4px;
+		font: 10px var(--d-mono);
+		color: #fff;
+		text-shadow: 0 0 3px #000;
 	}
 	.readout {
 		display: flex;
@@ -513,7 +613,7 @@
 	}
 	.scrub {
 		display: grid;
-		grid-template-columns: auto minmax(0, 1fr) 96px;
+		grid-template-columns: auto minmax(0, 1fr) 104px;
 		flex: 1;
 		align-items: center;
 		gap: 10px;
@@ -530,8 +630,14 @@
 	.stages {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: 6px;
 		margin-top: 8px;
+	}
+	.zero {
+		width: 2px;
+		height: 24px;
+		background: var(--d-accent);
 	}
 	.caption {
 		min-height: 5.4em;

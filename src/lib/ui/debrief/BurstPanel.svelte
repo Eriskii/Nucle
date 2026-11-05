@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CAUSES, type BurstReport, type Cause } from '#lib/game/debrief.ts';
-	import { blastRangeKm, localFalloutHeightM, optimumHobM, psiProfile } from '#lib/game/effects.ts';
+	import { blastRangeKm, localFalloutHeightM, optimumHobM, psiProfile, type Precip } from '#lib/game/effects.ts';
+	import { LOOKS } from '#lib/game/weaponlooks.ts';
 	import { directFractions } from '#lib/game/sim.ts';
 	import { WEAPON_FACTS } from '#lib/game/weaponfacts.ts';
 	import { fissionFractionAt, hasDial } from '#lib/game/weapons.ts';
@@ -13,15 +14,19 @@
 	import SplitBar from './SplitBar.svelte';
 	import type { DebriefText } from './text.ts';
 	import WeaponProfile from './WeaponProfile.svelte';
+	import WeaponView from './WeaponView.svelte';
 
 	interface Props {
 		r: BurstReport;
 		F: Fmt;
 		t: DebriefText;
 		placeName: (p: { name: string; ru?: string }) => string;
+		precip: Precip;
+		grade: number;
 	}
 
-	let { r, F, t, placeName }: Props = $props();
+	let { r, F, t, placeName, precip, grade }: Props = $props();
+	let render3d = $state(true);
 	const W = $derived(t.weapon);
 	const b = $derived(r.burst);
 	const facts = $derived(WEAPON_FACTS[b.weapon.id]);
@@ -153,6 +158,10 @@
 		<div class="pair">
 			<div>
 				{#if facts?.outline}
+					{#if render3d && LOOKS[b.weapon.id]}
+						<WeaponView id={b.weapon.id} {facts} height={280} {grade} dragLabel={W.renderHint} desc={W.renderDesc} onunavailable={() => (render3d = false)} />
+						<p class="small">{W.renderNote} {W.paint[b.weapon.id] ?? ''}</p>
+					{/if}
 					<WeaponProfile {facts} {F} labels={{ person: W.person, desc: W.profileDesc }} />
 					<p class="small">{facts.drawn ? `${W.drawnAs[facts.drawn]} ` : ''}{W.outlineNote}</p>
 				{:else}
@@ -226,7 +235,7 @@
 		<section>
 			<h3>{W.sectionSide}</h3>
 			<p>{W.sideBody}</p>
-			{#key r.index}<SideView {r} {F} text={W.side} />{/key}
+			{#key r.index}<SideView {r} {F} text={W.side} {precip} {grade} />{/key}
 		</section>
 
 		<section>

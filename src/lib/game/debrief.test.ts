@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { analyze, CAUSES } from './debrief';
 import { decodeGrid, type TheatreData, type TheatreMeta } from './data';
+import { DELIVERY, flightFor } from './delivery';
 import { dynamicPsi, peakWindMs, shockArrival, shockSpeedMs } from './effects';
 import { generate, theatreIdForDay } from './generator';
 import { evaluate } from './scenario';
@@ -57,5 +58,27 @@ describe('post-strike report', () => {
 		near(arrival(1000, 600, 2 * MI), 4.5, 0.3);
 		near(arrival(20, 160, MI), 3, 0.3);
 		near(arrival(20, 160, 2 * MI), 7.5, 0.25);
+	});
+});
+
+describe('delivery timeline', () => {
+	it('lands near the published fall times', () => {
+		// Little Boy fell 43 to 44 s from 9470 m to 600 m. Fat Man about 43 s from a planned 9140 m to 503 m.
+		near(flightFor('boy', 600).releaseS, 44, 0.08);
+		near(flightFor('fat', 503).releaseS, 43, 0.08);
+		// Tsar Bomba fell by parachute from 10.5 km to 4 km in about 188 s.
+		near(flightFor('tsar', 4000).releaseS, 188, 0.1);
+	});
+
+	it('reaches the burst point for every weapon, even an awkward height', () => {
+		for (const id of Object.keys(DELIVERY)) {
+			for (const hob of [0, 500, 12000, 29000]) {
+				const f = flightFor(id, hob);
+				const end = f.at(0);
+				expect(Math.abs(end.xM)).toBeLessThan(5);
+				expect(f.durationS).toBeGreaterThan(0);
+				expect(f.at(-f.durationS).altM).toBeGreaterThanOrEqual(end.altM - 1);
+			}
+		}
 	});
 });

@@ -118,6 +118,22 @@ export const EN = {
 			round: 'Drawn as the complete round, as it was fired.'
 		},
 		outlineNote: 'A schematic outline to scale, from published dimensions. The shape is approximate.',
+		renderHint: 'Drag to turn',
+		renderDesc: 'Rotatable 3D view of the outside of the weapon',
+		renderNote: 'The outside only, drawn from public photographs, so the shape and details are approximate.',
+		paint: {
+			boy: 'No wartime colour record survives: photos are black and white. The display at the US Air Force museum is olive, shown here. The casing at the Imperial War Museum is dark grey.',
+			fat: 'Mustard yellow in written accounts, with black sealing tar over the seams. Wartime photos are black and white.',
+			b83: 'Colour follows a gloss-white trainer unit.',
+			tsar: 'Follows the casing at the Sarov museum, which is captioned as a related body with a different nose from the real bomb.',
+			tsar2: 'Follows the casing at the Sarov museum, which is captioned as a related body with a different nose from the real bomb.',
+			ss18: 'Follows a museum display of a late variant.',
+			ss25: 'Colour rests on photos of the later Topol-M canister, and is weak evidence.',
+			pos: 'Follows a released test round, which may have been painted for those tests. Fins are a guess.',
+			w76: 'No source for the colour of this reentry vehicle was found. It is drawn dark as a guess.',
+			w87: 'No source for the colour of this reentry vehicle was found. It is drawn dark as a guess.',
+			w88: 'No source for the colour of this reentry vehicle was found. It is drawn dark as a guess.'
+		} as Record<string, string>,
 		facts: { length: 'Length', diameter: 'Diameter', mass: 'Mass', year: 'Year', confidence: 'Source quality', source: 'Source' },
 		massConflict: 'sources disagree',
 		massApprox: 'upper figure, uncertain',
@@ -140,19 +156,50 @@ export const EN = {
 		split: { blast: 'Blast and shock', heat: 'Heat', prompt: 'Prompt radiation', residual: 'Lingering radioactivity' },
 		splitBody: 'Rule of thumb from Glasstone & Dolan. The share for heat is the value the model uses for this yield and height, which falls near the ground because the ground blocks and absorbs part of it. Lingering radioactivity scales with the fission share.',
 		sectionSide: 'Side view, to scale',
-		sideBody: 'Drag the time slider or press play. Time runs on a stretched scale, because everything important in the first second happens a million times faster than what happens in the first hour. The bars under the ground fill as each effect arrives.',
+		sideBody: 'Drag the time slider or press play, starting from before detonation. After zero, time runs on a stretched scale, because everything important in the first second happens a million times faster than what happens in the first hour. The bars under the ground fill as each effect arrives.',
 		side: {
+			delivery: {
+				gravity: [
+					{ id: 'approach', title: 'Approach', body: 'The aircraft holds a straight, level run over the target. The crew aim visually or by radar, and the weapon is still in the bomb bay.' },
+					{ id: 'release', title: 'Release', body: 'The bomb falls away, and the aircraft turns hard to get clear of a blast it has only a minute or so to escape.' },
+					{ id: 'fall', title: 'Fall', body: 'It falls freely, carrying the aircraft\'s forward speed, so it lands ahead of where it was let go. This is the last stretch in which nothing has happened yet.' }
+				],
+				retarded: [
+					{ id: 'approach', title: 'Approach', body: 'The aircraft runs in toward the target. A large parachute is packed in the weapon\'s tail.' },
+					{ id: 'release', title: 'Release', body: 'The weapon drops clear, and the aircraft turns away to escape.' },
+					{ id: 'chute', title: 'Parachute', body: 'The parachute opens and slows the fall sharply. That delay gives the aircraft time to get away, or lets the weapon lie on the ground before it fires. The Tsar Bomba took 188 seconds to come down this way.' }
+				],
+				reentry: [
+					{ id: 'reentry', title: 'Reentry', body: 'Launched minutes to half an hour ago from far away, the vehicle has arced through space and is coming back in at more than 6 km per second, about 20 times the speed of sound.' },
+					{ id: 'plasma', title: 'Plasma', body: 'The air ahead of it cannot get out of the way, and is compressed until it glows. From the ground it would look like a meteor, for the few seconds left.' }
+				],
+				cruise: [{ id: 'run', title: 'Run in', body: 'A small jet-powered missile, launched from a distant bomber, flies very low along a preset route. It is about the speed of an airliner, and it makes no bright trail.' }],
+				rocket: [{ id: 'descent', title: 'Descent', body: 'A short-range battlefield missile comes down at several times the speed of sound, soon after leaving its launcher.' }],
+				shell: [{ id: 'flight', title: 'Flight', body: 'Fired from a recoilless rifle by a small crew, this round flies only 2 to 4 km, close enough that the crew may be within reach of its radiation.' }],
+				torpedo: [{ id: 'run', title: 'Run in', body: 'Reported to be an uncrewed nuclear underwater vehicle, it approaches the coast. Its reported speed varies widely between sources, and none has been confirmed.' }],
+				emplaced: [{ id: 'cab', title: 'Shot cab', body: 'The device sits in a cab on a small artificial island on the reef at Bikini, joined to the next island by a causeway. Nobody is near it: the firing crew are in a bunker on another island across the atoll.' }],
+				unbuilt: [{ id: 'none', title: 'Never delivered', body: 'This was never built, and no way of delivering it was ever designed. The picture starts at the moment of the burst, as the model has it.' }]
+			},
+			fuze: { id: 'fuze', title: 'Fuze', body: 'A fuze reads the height set before flight. When the weapon gets there, it fires, with no warning at all on the ground.' },
+			fuzeSurface: { id: 'fuze', title: 'Impact', body: 'Set to fire on reaching the ground, which digs the fireball into the earth. That is what makes heavy local fallout.' },
+			flightLine: (alt: string, speed: string) => `Height ${alt}, moving at ${speed}.`,
+			tracking: 'Tracking camera',
+			trackingGeneric: 'Tracking camera: generic reentry vehicle',
+			enlarged: 'Aircraft and weapon markers are enlarged, since they would be invisible at this scale.',
+			raised: 'This burst is higher than this carrier could reach, so the start of its flight has been raised.',
+			illustrative: 'No source gives this delivery\'s heights or descent, so they are illustrative.',
+			liveNote: 'The cloud\'s billows, dust, fires and skyline are illustrations. Their sizes and timing follow the model, except that the cap is drawn thicker than the model\'s very flat one.',
 			stages: [
 				{ id: 'flash', title: 'Flash', body: 'The weapon has finished its work within a millionth of a second. What you see first is a ball of air so hot it glows. Heat and light cross the city at the speed of light, before anything else can move.' },
 				{ id: 'fireball', title: 'Fireball', body: 'The fireball swells and keeps radiating. Most of the burn injuries happen during this pulse, which is why it matters whether someone is outdoors or can see the fireball. Rising heat starts to lift it.' },
 				{ id: 'shock', title: 'Shock', body: 'The shock wave has broken away from the fireball and runs along the ground, starting faster than sound and slowing toward it. Behind the front comes a wind stronger than any hurricane, then a reverse wind back toward the centre.' },
 				{ id: 'cloud', title: 'Cloud', body: 'The hot gas rises like a balloon, dragging air up the stem behind it, and spreads out when it stops being lighter than the air around it. It takes about ten minutes to reach its full height. Fires are now starting in the wreckage.' },
-				{ id: 'fallout', title: 'Fallout', body: 'If the fireball touched the ground, the cloud carries tonnes of pulverized soil coated in radioactive atoms. The wind moves it downwind while heavy grit falls first. It reaches the ground as dust for hours, far beyond the blast. The dots are an illustration, not a count.' }
+				{ id: 'fallout', title: 'Fallout', body: 'If the fireball touched the ground, the cloud carries tonnes of pulverized soil coated in radioactive atoms. The wind moves it downwind while heavy grit falls first. It reaches the ground as dust for hours, far beyond the blast. The veils are an illustration, not a count.' }
 			],
 			play: 'Play',
 			pause: 'Pause',
 			time: 'Time',
-			scale: 'Height and distance share one scale. The ground curves as the real Earth does. The fireball and cloud timing are estimates fitted to the 1 Mt case in Glasstone & Dolan. Burst range and shock arrival come from the model.',
+			scale: 'Height and distance share one scale, and the ground curves as the real Earth does. The camera backs away when it has to, keeping that scale. Fireball and cloud timing are estimates fitted to the 1 Mt case in Glasstone & Dolan. Burst range and shock arrival come from the model.',
 			height: 'Height',
 			downwind: 'Downwind',
 			upwind: 'Upwind',
