@@ -85,6 +85,20 @@ export function distanceKm(aLat: number, aLon: number, bLat: number, bLon: numbe
 	return 2 * EARTH_KM * Math.asin(Math.min(1, c / 2));
 }
 
+export const CELL_OFFSETS = [-0.375, -0.125, 0.125, 0.375];
+
+/** Fatal and structural fractions at a point, before averaging over a cell. Burns and radiation ramp over their outer 15%. */
+export function directFractions(psi: number, km: number, thermal: number, radiation: number) {
+	const burns = thermal > 0 ? 0.25 * clamp01((thermal - km) / (thermal * 0.15)) : 0;
+	return {
+		blast: fatalityFromPsi(psi),
+		burns,
+		radiation: radiation > 0 ? 0.9 * clamp01((radiation - km) / (radiation * 0.15)) : 0,
+		loss: structureLossFromPsi(psi),
+		fire: burns > 0 ? 0.3 * (burns / 0.25) : 0
+	};
+}
+
 export class Sim {
 	readonly grid: PopGrid;
 	readonly weather: Weather;
@@ -160,20 +174,16 @@ export class Sim {
 		// Lookup tables by distance, each entry averaged over a cell's width.
 		const killT = new Float32Array(TABLE_SIZE + 1);
 		const standT = new Float32Array(TABLE_SIZE + 1);
-		const half = grid.cellKm / 2;
-		const offsets = [-half * 0.75, -half * 0.25, half * 0.25, half * 0.75];
+		const offsets = CELL_OFFSETS.map((o) => o * grid.cellKm);
 		for (let i = 0; i <= TABLE_SIZE; i++) {
 			const d = (i / TABLE_SIZE) * directKm;
 			let kill = 0;
 			let stand = 0;
 			for (const o of offsets) {
 				const r = Math.abs(d + o);
-				const psi = psiAt(r);
-				const burn = thermal > 0 ? 0.25 * clamp01((thermal - r) / (thermal * 0.15)) : 0;
-				const rad = radiation > 0 ? 0.9 * clamp01((radiation - r) / (radiation * 0.15)) : 0;
-				kill += 1 - (1 - fatalityFromPsi(psi)) * (1 - burn) * (1 - rad);
-				const fire = burn > 0 ? 0.3 * (burn / 0.25) : 0;
-				stand += (1 - structureLossFromPsi(psi)) * (1 - fire);
+				const f = directFractions(psiAt(r), r, thermal, radiation);
+				kill += 1 - (1 - f.blast) * (1 - f.burns) * (1 - f.radiation);
+				stand += (1 - f.loss) * (1 - f.fire);
 			}
 			killT[i] = 1 - kill / offsets.length;
 			standT[i] = stand / offsets.length;

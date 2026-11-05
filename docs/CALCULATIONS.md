@@ -171,6 +171,27 @@ score = 100 × ( 0.5 × (1 - plan success)
 
 `board.ts`. There's no server, so **the other rows are simulated**: the same fictional names for everyone that day, at about 66–104% of par with some jitter, plus the solver's own row. Lower-is-better days invert that ratio. Your row is placed by your real score. It isn't a real leaderboard.
 
+## The post-strike report
+
+The "Learn what you've done" page (`debrief.ts`, `src/lib/ui/debrief/`) reads the plan as it flew. It doesn't change any score. The game only needs each cell's survivors, so the report adds these on top:
+
+**Splitting deaths by cause and weapon.** Survival multiplies, so hazards, `-ln(1 - chance)`, add. A cell's deaths are shared among every weapon and cause in proportion to the hazard each contributed, which doesn't depend on the order of bursts. Fallout hazard is shared by each weapon's share of the dose. A test checks the split adds back to the game's total.
+
+**Alone and adds.** "Alone" is the tally with only that weapon. "Adds" is the plan's total minus the tally without it. "Adds" can exceed "alone", because fallout doses stack past the lethal threshold.
+
+| Figure | How | Source |
+|---|---|---|
+| Shock speed, peak wind, dynamic pressure | Rankine-Hugoniot at 14.7 psi and 1116 ft/s | G&D §3.55, matches Table 3.07 |
+| Shock arrival | Distance divided by shock speed at each range's own pressure, integrated outward. Free air on the way down is half the surface-burst pressure (estimate) | Tested against G&D §2.32 and §3.09 |
+| Thermal pulse | Second maximum at 0.0417 W^0.44 s, with about 80% out by ten times that | G&D §7.85 |
+| Cloud rise | `1 - exp(-t / 90 s)` of final height at every yield (estimate) | Fitted to G&D Table 2.12 for 1 Mt |
+| Fireball growth, fallout dots, stem shape | Illustration only | **Game choice** |
+| Energy split | 5% prompt radiation, 10% × fission share residual, the model's thermal share, and the rest blast | Rule of thumb, G&D §1.25 to §1.27 |
+| Second opinion | OTA Fig. 1 bands applied to each cell's peak overpressure | OTA 1979, blast only |
+| Place totals | Each cell counts toward its nearest named city, within 25 km or 4 cells | **Game choice**, not city limits |
+
+Weapon dimensions, with a source and confidence for each, are in `src/lib/game/weaponfacts.ts`. Outlines are external shapes traced by eye, to scale but approximate.
+
 ## What's stored
 
 Cookies only (`storage.ts`): the last 150 days of results, today's plan, theme and sound preferences. A finished day is re-scored from its saved plan when reloaded, so changing the model changes old reports.

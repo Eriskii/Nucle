@@ -25,7 +25,7 @@ The daily board is simulated from the solver's par, since there's no server to h
 
 ## How it's calculated
 
-[docs/CALCULATIONS.md](docs/CALCULATIONS.md) walks through everything from date to score. [docs/EFFECTS.md](docs/EFFECTS.md) has the weapon effects sources and how far the model sits from published figures.
+[docs/CALCULATIONS.md](docs/CALCULATIONS.md) walks through everything from date to score. [docs/EFFECTS.md](docs/EFFECTS.md) has the weapon effects sources and how far the model sits from published figures. After each strike, the in-game "Learn what you've done" report shows the same workings for your own plan.
 
 ## Data
 

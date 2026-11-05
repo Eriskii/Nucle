@@ -1,0 +1,639 @@
+import type { TheatreMeta } from './data';
+import {
+	blastRangeKm,
+	burnThreshold,
+	cloudGeometry,
+	EARTH_KM,
+	effectiveWinds,
+	EXO_HEIGHT_M,
+	empKm,
+	falloutBands,
+	falloutField,
+	fatalityFromFallout,
+	fireballKm,
+	groundCoupling,
+	peakWindMs,
+	psiProfile,
+	radiationKm,
+	rainoutShare,
+	ringsFor,
+	shockArrival,
+	thermalKm,
+	thermalMaxS,
+	thermalPartition,
+	dynamicPsi,
+	type CloudGeometry,
+	type PlumeBand,
+	type Rings,
+	type ShockPoint
+} from './effects';
+import { type Outcome, type Scenario } from './scenario';
+import { CELL_OFFSETS, directFractions, distanceKm, type Burst, type Sim } from './sim';
+import { fissionFractionAt } from './weapons';
+
+// Everything the post-strike report shows, worked out from the plan as it flew. The game only needs
+// each cell's survivors, so this goes further and splits those deaths by cause and by weapon.
+
+const RAD = Math.PI / 180;
+export const HIROSHIMA_KT = 15;
+/** A saturated cell has an infinite hazard, so survival is floored to keep shares finite. */
+const MIN_SURVIVE = 1e-9;
+const hazard = (fraction: number) => -Math.log(Math.max(1 - fraction, MIN_SURVIVE));
+
+export type Cause = 'blast' | 'burns' | 'radiation' | 'fallout';
+export const CAUSES: Cause[] = ['blast', 'burns', 'radiation', 'fallout'];
+export type CauseSplit = Record<Cause, number>;
+const noCauses = (): CauseSplit => ({ blast: 0, burns: 0, radiation: 0, fallout: 0 });
+
+export interface DistanceBin {
+	fromKm: number;
+	toKm: number;
+	pop: number;
+	deaths: number;
+}
+
+/** One ring of ground around a burst, for that burst on its own. */
+export interface Zone {
+	psi: number;
+	fromKm: number;
+	toKm: number;
+	pop: number;
+	deaths: number;
+	structures: number;
+	arrivalS: number;
+	windMs: number;
+	dynamicPsi: number;
+}
+
+export interface FalloutRow {
+	rate: number;
+	band: PlumeBand;
+	areaKm2: number;
+	pop: number;
+	/** Dose in rad for sheltered people on the wind axis at the contour's midpoint. */
+	sampleDose: number;
+}
+
+export interface BurstReport {
+	index: number;
+	burst: Burst;
+	rings: Rings;
+	exo: boolean;
+	fissionShare: number;
+	fissionKt: number;
+	fusionKt: number;
+	hiroshimas: number;
+	thermalShare: number;
+	burnCal: number;
+	thermalMaxS: number;
+	fireballKm: number;
+	/** Fireball's reach: true if it touches the ground, which is what makes heavy local fallout. */
+	fireballTouches: boolean;
+	cloud: CloudGeometry;
+	winds: { cap: number; stem: number };
+	coupling: number;
+	rainout: number;
+	empKm: number;
+	empPop: number;
+	shock: ShockPoint[];
+	/** This weapon's share of the plan's deaths, with overlaps split. */
+	deaths: number;
+	causes: CauseSplit;
+	/** What it would have done alone. */
+	soloDeaths: number;
+	soloStructures: number;
+	soloFalloutPop: number;
+	/** What the plan loses without it. */
+	marginalDeaths: number;
+	marginalStructures: number;
+	zones: Zone[];
+	bins: DistanceBin[];
+	falloutRows: FalloutRow[];
+	falloutDeaths: number;
+	maxDeathKm: number;
+	placesHit: { name: string; ru?: string; km: number; psi: number }[];
+}
+
+export interface FatalBand {
+	from: number;
+	to: number;
+	pop: number;
+	cells: number;
+}
+
+export interface PlaceRow {
+	name: string;
+	ru?: string;
+	lat: number;
+	lon: number;
+	pop: number;
+	deaths: number;
+	nearestKm: number;
+	peakPsi: number;
+	rate: number;
+	kind: 'city' | 'landmark';
+}
+
+export interface WorkedBurstStep {
+	index: number;
+	km: number;
+	psi: number;
+	blast: number;
+	burns: number;
+	radiation: number;
+	survive: number;
+	dose: number;
+}
+
+export interface WorkedCell {
+	cell: number;
+	lat: number;
+	lon: number;
+	pop: number;
+	structures: number;
+	steps: WorkedBurstStep[];
+	direct: number;
+	dose: number;
+	falloutFatal: number;
+	fatal: number;
+	deaths: number;
+	standing: number;
+}
+
+/** OTA 1979 Fig. 1 applied to this plan's peak overpressure, as a check on the game's own curves. */
+export interface OtaCheck {
+	fatal: number;
+	injured: number;
+}
+
+export interface DebriefData {
+	bursts: BurstReport[];
+	ota: OtaCheck;
+	causes: CauseSplit;
+	deaths: number;
+	structures: number;
+	mapPop: number;
+	mapStructures: number;
+	yieldKt: number;
+	hiroshimas: number;
+	fissionKt: number;
+	popAffected: number;
+	/** Sum of what each weapon would have killed alone, minus what they did together. */
+	overlapDeaths: number;
+	bands: FatalBand[];
+	places: PlaceRow[];
+	worked: WorkedCell | null;
+	/** Per cell, for the map: fraction killed, fraction of structures gone, H+1 rate, dose. */
+	cellFatal: Float32Array;
+	cellStand: Float32Array;
+	cellRate: Float32Array;
+	cellDose: Float32Array;
+}
+
+/** Distance along and across the wind, the same tangent plane the simulation uses. */
+function plumeAxes(b: Burst, lat: number, lon: number, bearing: number): [number, number] {
+	const p = (x: number, y: number): [number, number, number] => [
+		Math.cos(x * RAD) * Math.cos(y * RAD),
+		Math.cos(x * RAD) * Math.sin(y * RAD),
+		Math.sin(x * RAD)
+	];
+	const [ax, ay, az] = p(lat, lon);
+	const [bx, by, bz] = p(b.lat, b.lon);
+	const dx = ax - bx;
+	const dy = ay - by;
+	const dz = az - bz;
+	const la = b.lat * RAD;
+	const lo = b.lon * RAD;
+	const east = (dx * -Math.sin(lo) + dy * Math.cos(lo)) * EARTH_KM;
+	const north = (dx * -Math.sin(la) * Math.cos(lo) + dy * -Math.sin(la) * Math.sin(lo) + dz * Math.cos(la)) * EARTH_KM;
+	const w = bearing * RAD;
+	return [east * Math.sin(w) + north * Math.cos(w), north * Math.sin(w) - east * Math.cos(w)];
+}
+
+const contourArea = (band: PlumeBand) => {
+	let area = 0;
+	for (const run of band.runs) {
+		for (let i = 1; i < run.length; i++) area += (run[i][0] - run[i - 1][0]) * (run[i][1] + run[i - 1][1]);
+	}
+	return area;
+};
+
+// The rows of OTA 1979 Table 3, so each ring can carry that table's description of the damage.
+const ZONE_PSI = [20, 10, 5, 3, 1];
+const BIN_COUNT = 24;
+
+/** Blast, burn and radiation fractions by distance for one burst, averaged the way the simulation averages a cell. */
+function directTable(b: Burst, sim: Sim) {
+	const { grid, weather } = sim;
+	const psiAt = psiProfile(b.kt, b.hobM);
+	const thermal = thermalKm(b.kt, b.hobM, weather);
+	const radiation = radiationKm(b.kt, b.hobM, b.weapon.enhanced);
+	const offsets = CELL_OFFSETS.map((o) => o * grid.cellKm);
+	return (km: number) => {
+		let blast = 0;
+		let burns = 0;
+		let rad = 0;
+		for (const o of offsets) {
+			const r = Math.abs(km + o);
+			const f = directFractions(psiAt(r), r, thermal, radiation);
+			blast += f.blast;
+			burns += f.burns;
+			rad += f.radiation;
+		}
+		return { blast: blast / offsets.length, burns: burns / offsets.length, radiation: rad / offsets.length };
+	};
+}
+
+export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMeta): DebriefData {
+	const { grid, weather } = sim;
+	const n = grid.n;
+	const bursts = outcome.bursts;
+	const effects = bursts.map((b) => sim.effect(b));
+
+	// First pass: whole-plan state per cell, the same combination Sim.tally does.
+	const surv = new Float64Array(n).fill(1);
+	const stand = new Float32Array(n).fill(1);
+	const rate = new Float32Array(n);
+	const dose = new Float32Array(n);
+	const empOn = new Uint8Array(n);
+	const directHazard = new Float64Array(n);
+	for (const e of effects) {
+		for (let j = 0; j < e.idx.length; j++) {
+			const i = e.idx[j];
+			surv[i] *= e.survive[j];
+			stand[i] *= e.standing[j];
+			rate[i] += e.fallout[j];
+			dose[i] += e.dose[j];
+			if (e.emp[j]) empOn[i] = 1;
+			directHazard[i] += hazard(1 - e.survive[j]);
+		}
+	}
+	const cellFatal = new Float32Array(n);
+	const falloutHazard = new Float64Array(n);
+	for (let i = 0; i < n; i++) {
+		const fallout = fatalityFromFallout(dose[i]);
+		cellFatal[i] = 1 - surv[i] * (1 - fallout);
+		falloutHazard[i] = hazard(fallout);
+	}
+
+	// Second pass: each death is shared among the weapons and causes in proportion to the hazard each
+	// contributed. Hazards add when survival multiplies, so this doesn't depend on the order of bursts.
+	const totals = noCauses();
+	const reports: BurstReport[] = bursts.map((b, index) => {
+		const e = effects[index];
+		const table = directTable(b, sim);
+		const causes = noCauses();
+		let deaths = 0;
+		let soloFalloutDeaths = 0;
+		let soloFalloutPop = 0;
+		let empPop = 0;
+		for (let j = 0; j < e.idx.length; j++) {
+			const i = e.idx[j];
+			const pop = grid.pop[i];
+			if (e.emp[j]) empPop += pop;
+			if (e.fallout[j] >= 10) soloFalloutPop += pop;
+			soloFalloutDeaths += pop * fatalityFromFallout(e.dose[j]);
+			const total = directHazard[i] + falloutHazard[i];
+			if (total <= 0 || pop <= 0) continue;
+			const dead = pop * cellFatal[i];
+			const fromFallout = dose[i] > 0 ? (falloutHazard[i] * e.dose[j]) / dose[i] : 0;
+			const direct = hazard(1 - e.survive[j]);
+			if (direct > 0) {
+				const f = table(distanceKm(grid.lat[i], grid.lon[i], b.lat, b.lon));
+				const hb = hazard(f.blast);
+				const ht = hazard(f.burns);
+				const hr = hazard(f.radiation);
+				const sum = hb + ht + hr;
+				// Rounding at a cell's edge can leave a little hazard with no named cause: call it blast.
+				const scale = sum > 0 ? direct / sum : 0;
+				causes.blast += (dead * (sum > 0 ? hb * scale : direct)) / total;
+				causes.burns += (dead * ht * scale) / total;
+				causes.radiation += (dead * hr * scale) / total;
+			}
+			causes.fallout += (dead * fromFallout) / total;
+		}
+		for (const c of CAUSES) {
+			deaths += causes[c];
+			totals[c] += causes[c];
+		}
+
+		const others = bursts.filter((_, k) => k !== index);
+		const alone = sim.tally([b]);
+		const without = sim.tally(others);
+		const exo = b.hobM >= EXO_HEIGHT_M;
+		const rings = ringsFor(b.weapon, b.kt, b.hobM, weather);
+		const fission = fissionFractionAt(b.weapon, b.kt);
+		const fire = fireballKm(b.kt, b.hobM);
+		const maxRange = Math.max(rings.psi1 * 1.2, rings.thermal, 0.2);
+
+		// Rings and distance bins, for this weapon alone.
+		const shock = exo ? [] : shockArrival(b.kt, b.hobM, maxRange);
+		const arrivalAt = (km: number) => {
+			if (!shock.length) return 0;
+			if (km <= shock[0].km) return shock[0].s;
+			for (let k = 1; k < shock.length; k++) {
+				if (km <= shock[k].km) {
+					const a = shock[k - 1];
+					const c = shock[k];
+					return a.s + ((km - a.km) / Math.max(c.km - a.km, 1e-9)) * (c.s - a.s);
+				}
+			}
+			return shock[shock.length - 1].s;
+		};
+		const edges = ZONE_PSI.map((psi) => ({ psi, km: exo ? 0 : blastRangeKm(psi, b.kt, b.hobM) }));
+		const zones: Zone[] = edges.map((edge, k) => ({
+			psi: edge.psi,
+			fromKm: k > 0 ? edges[k - 1].km : 0,
+			toKm: edge.km,
+			pop: 0,
+			deaths: 0,
+			structures: 0,
+			arrivalS: arrivalAt(edge.km),
+			windMs: peakWindMs(edge.psi),
+			dynamicPsi: dynamicPsi(edge.psi)
+		}));
+		const survives = new Map<number, number>();
+		const standing = new Map<number, number>();
+		for (let j = 0; j < e.idx.length; j++) {
+			survives.set(e.idx[j], e.survive[j] * (1 - fatalityFromFallout(e.dose[j])));
+			standing.set(e.idx[j], e.standing[j]);
+		}
+		// Bins run out to where this weapon's deaths practically end.
+		const hits: { km: number; pop: number; dead: number }[] = [];
+		const allKm = new Float32Array(n);
+		for (let i = 0; i < n; i++) {
+			const km = distanceKm(grid.lat[i], grid.lon[i], b.lat, b.lon);
+			allKm[i] = km;
+			const dead = grid.pop[i] * (1 - (survives.get(i) ?? 1));
+			if (dead > 0) hits.push({ km, pop: grid.pop[i], dead });
+			for (const z of zones) {
+				if (km > z.fromKm && km <= z.toKm) {
+					z.pop += grid.pop[i];
+					z.deaths += dead;
+					z.structures += grid.structures[i] * (1 - (standing.get(i) ?? 1));
+					break;
+				}
+			}
+		}
+		hits.sort((x, y) => x.km - y.km);
+		let running = 0;
+		let reachKm = 0;
+		const soloTotal = hits.reduce((sum, h) => sum + h.dead, 0);
+		for (const h of hits) {
+			running += h.dead;
+			reachKm = h.km;
+			if (running >= soloTotal * 0.995) break;
+		}
+		const binMax = Math.max(reachKm, rings.psi5, grid.cellKm * 2) * 1.05;
+		const bins: DistanceBin[] = Array.from({ length: BIN_COUNT }, (_, k) => ({
+			fromKm: (k / BIN_COUNT) * binMax,
+			toKm: ((k + 1) / BIN_COUNT) * binMax,
+			pop: 0,
+			deaths: 0
+		}));
+		for (let i = 0; i < n; i++) {
+			const k = Math.floor((allKm[i] / binMax) * BIN_COUNT);
+			if (k >= BIN_COUNT) continue;
+			bins[k].pop += grid.pop[i];
+			bins[k].deaths += grid.pop[i] * (1 - (survives.get(i) ?? 1));
+		}
+
+		// Fallout contours.
+		const bands = exo ? [] : falloutBands(b.weapon, b.kt, b.hobM, weather);
+		const field = falloutField(b.weapon, b.kt, b.hobM, weather);
+		const falloutRows: FalloutRow[] = bands.map((band) => {
+			let pop = 0;
+			for (let j = 0; j < e.idx.length; j++) if (e.fallout[j] >= band.rate) pop += grid.pop[e.idx[j]];
+			const mid = band.length / 2;
+			return {
+				rate: band.rate,
+				band,
+				areaKm2: contourArea(band),
+				pop,
+				sampleDose: field ? field.doseAt(band.rate, mid) : 0
+			};
+		});
+
+		const placesHit = meta.places
+			.map((p) => ({ name: p.name, ru: p.ru, km: distanceKm(p.lat, p.lon, b.lat, b.lon), psi: 0 }))
+			.sort((x, y) => x.km - y.km)
+			.slice(0, 4);
+		const psiAt = psiProfile(b.kt, b.hobM);
+		for (const p of placesHit) p.psi = psiAt(p.km);
+
+		return {
+			index,
+			burst: b,
+			rings,
+			exo,
+			fissionShare: fission,
+			fissionKt: b.kt * fission,
+			fusionKt: b.kt * (1 - fission),
+			hiroshimas: b.kt / HIROSHIMA_KT,
+			thermalShare: thermalPartition(b.kt, b.hobM),
+			burnCal: burnThreshold(b.kt),
+			thermalMaxS: thermalMaxS(b.kt),
+			fireballKm: fire,
+			fireballTouches: fire * 1000 > b.hobM,
+			cloud: cloudGeometry(b.kt),
+			winds: effectiveWinds(b.kt, weather.windKmh),
+			coupling: groundCoupling(b.kt, b.hobM),
+			rainout: rainoutShare(b.kt, weather.precip),
+			empKm: empKm(b.kt, b.hobM),
+			empPop,
+			shock,
+			deaths,
+			causes,
+			soloDeaths: alone.fatalities,
+			soloStructures: alone.structures,
+			soloFalloutPop,
+			marginalDeaths: outcome.tally.fatalities - without.fatalities,
+			marginalStructures: outcome.tally.structures - without.structures,
+			zones,
+			bins,
+			falloutRows,
+			falloutDeaths: soloFalloutDeaths,
+			maxDeathKm: binMax,
+			placesHit
+		};
+	});
+
+	// How the map's people ended up, by how bad their cell was.
+	const BANDS: [number, number][] = [
+		[0, 0.01],
+		[0.01, 0.1],
+		[0.1, 0.5],
+		[0.5, 0.9],
+		[0.9, 1.0001]
+	];
+	const bands: FatalBand[] = BANDS.map(([from, to]) => ({ from, to, pop: 0, cells: 0 }));
+	let popAffected = 0;
+	for (let i = 0; i < n; i++) {
+		const f = cellFatal[i];
+		const band = bands.find((x) => f >= x.from && f < x.to) ?? bands[0];
+		band.pop += grid.pop[i];
+		band.cells++;
+		if (f > 0 || rate[i] > 0 || empOn[i]) popAffected += grid.pop[i];
+	}
+
+	const places = placeRows(s, sim, bursts, meta, cellFatal);
+
+	const ota: OtaCheck = { fatal: 0, injured: 0 };
+	const peak = new Float32Array(n);
+	for (const b of bursts) {
+		if (b.hobM >= EXO_HEIGHT_M) continue;
+		const psiAt = psiProfile(b.kt, b.hobM);
+		const limit = blastRangeKm(1, b.kt, b.hobM);
+		for (let i = 0; i < n; i++) {
+			if (Math.abs(grid.lat[i] - b.lat) * 111.2 > limit) continue;
+			const km = distanceKm(grid.lat[i], grid.lon[i], b.lat, b.lon);
+			if (km <= limit) peak[i] = Math.max(peak[i], psiAt(km));
+		}
+	}
+	for (let i = 0; i < n; i++) {
+		const psi = peak[i];
+		const pop = grid.pop[i];
+		if (psi > 12) {
+			ota.fatal += pop * 0.98;
+			ota.injured += pop * 0.02;
+		} else if (psi > 5) {
+			ota.fatal += pop * 0.5;
+			ota.injured += pop * 0.4;
+		} else if (psi > 2) {
+			ota.fatal += pop * 0.05;
+			ota.injured += pop * 0.45;
+		} else if (psi > 1) ota.injured += pop * 0.25;
+	}
+
+	// The worked example is the cell that lost the most people while some of them lived, so every
+	// term still means something. A cell where everybody died only shows a row of ones.
+	let worst = -1;
+	let worstScore = 0;
+	for (let i = 0; i < n; i++) {
+		const score = grid.pop[i] * cellFatal[i] * (cellFatal[i] < 0.97 ? 1 : 0.02);
+		if (score > worstScore) {
+			worstScore = score;
+			worst = i;
+		}
+	}
+	let worked: WorkedCell | null = null;
+	if (worst >= 0) {
+		const i = worst;
+		const steps: WorkedBurstStep[] = [];
+		bursts.forEach((b, index) => {
+			const e = effects[index];
+			const j = e.idx.indexOf(i);
+			if (j < 0) return;
+			const km = distanceKm(grid.lat[i], grid.lon[i], b.lat, b.lon);
+			const f = directTable(b, sim)(km);
+			steps.push({
+				index,
+				km,
+				psi: psiProfile(b.kt, b.hobM)(km),
+				blast: f.blast,
+				burns: f.burns,
+				radiation: f.radiation,
+				survive: e.survive[j],
+				dose: e.dose[j]
+			});
+		});
+		worked = {
+			cell: i,
+			lat: grid.lat[i],
+			lon: grid.lon[i],
+			pop: grid.pop[i],
+			structures: grid.structures[i],
+			steps,
+			direct: surv[i],
+			dose: dose[i],
+			falloutFatal: fatalityFromFallout(dose[i]),
+			fatal: cellFatal[i],
+			deaths: grid.pop[i] * cellFatal[i],
+			standing: stand[i]
+		};
+	}
+
+	const fissionKt = reports.reduce((sum, r) => sum + r.fissionKt, 0);
+	const soloSum = reports.reduce((sum, r) => sum + r.soloDeaths, 0);
+	return {
+		bursts: reports,
+		ota,
+		causes: totals,
+		deaths: outcome.tally.fatalities,
+		structures: outcome.tally.structures,
+		mapPop: grid.totalPop,
+		mapStructures: grid.totalStructures,
+		yieldKt: outcome.tally.yieldKt,
+		hiroshimas: outcome.tally.yieldKt / HIROSHIMA_KT,
+		fissionKt,
+		popAffected,
+		overlapDeaths: Math.max(0, soloSum - outcome.tally.fatalities),
+		bands,
+		places,
+		worked,
+		cellFatal,
+		cellStand: stand,
+		cellRate: rate,
+		cellDose: dose
+	};
+}
+
+export const placeLimitKm = (cellKm: number) => Math.max(25, cellKm * 4);
+
+/** Named places on the map. Each cell's people count toward the nearest city, up to a limit. */
+function placeRows(s: Scenario, sim: Sim, bursts: Burst[], meta: TheatreMeta, cellFatal: Float32Array): PlaceRow[] {
+	const { grid, weather } = sim;
+	const cities = meta.places;
+	const limitKm = placeLimitKm(grid.cellKm);
+	const pop = new Float64Array(cities.length);
+	const dead = new Float64Array(cities.length);
+	if (cities.length) {
+		for (let i = 0; i < grid.n; i++) {
+			let best = -1;
+			let bestKm = limitKm;
+			for (let c = 0; c < cities.length; c++) {
+				// A cheap box test first: this runs for every cell against every city.
+				if (Math.abs(cities[c].lat - grid.lat[i]) * 111.2 > bestKm) continue;
+				const km = distanceKm(grid.lat[i], grid.lon[i], cities[c].lat, cities[c].lon);
+				if (km < bestKm) {
+					bestKm = km;
+					best = c;
+				}
+			}
+			if (best >= 0) {
+				pop[best] += grid.pop[i];
+				dead[best] += grid.pop[i] * cellFatal[i];
+			}
+		}
+	}
+	const probe = (lat: number, lon: number) => {
+		let nearestKm = Infinity;
+		let peakPsi = 0;
+		let rate = 0;
+		for (const b of bursts) {
+			const km = distanceKm(lat, lon, b.lat, b.lon);
+			nearestKm = Math.min(nearestKm, km);
+			peakPsi = Math.max(peakPsi, psiProfile(b.kt, b.hobM)(km));
+			const field = falloutField(b.weapon, b.kt, b.hobM, weather);
+			if (field) {
+				const [down, cross] = plumeAxes(b, lat, lon, weather.windBearing);
+				rate += field.rateAt(down, cross);
+			}
+		}
+		return { nearestKm, peakPsi, rate };
+	};
+	const rows: PlaceRow[] = cities.map((c, i) => ({
+		name: c.name,
+		ru: c.ru,
+		lat: c.lat,
+		lon: c.lon,
+		pop: pop[i],
+		deaths: dead[i],
+		kind: 'city',
+		...probe(c.lat, c.lon)
+	}));
+	for (const l of s.theatre.landmarks ?? []) {
+		rows.push({ name: l.name, lat: l.lat, lon: l.lon, pop: 0, deaths: 0, kind: 'landmark', ...probe(l.lat, l.lon) });
+	}
+	return rows.sort((a, b) => b.deaths - a.deaths || b.peakPsi - a.peakPsi);
+}

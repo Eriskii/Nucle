@@ -42,7 +42,7 @@ const lerpTable = (table: [number, number][], x: number) => {
 const clamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x);
 
 /** Largest height of burst with appreciable local fallout, ±30%. G&D eq. 2.128.1: 180 W^0.4 ft. */
-const localFalloutHeightM = (kt: number) => (180 * Math.pow(kt, 0.4)) / FT_PER_M;
+export const localFalloutHeightM = (kt: number) => (180 * Math.pow(kt, 0.4)) / FT_PER_M;
 
 /** Maximum fireball radius. G&D §2.127: twice breakaway, 110 W^0.4 ft in air, 145 W^0.4 ft on contact. */
 export function fireballKm(kt: number, hobM = 1e9): number {
@@ -172,6 +172,57 @@ export function blastRangeKm(psi: number, kt: number, hobM: number): number {
 // Capped under the ceiling, or a 10 Gt device's optimum would have no effect on the ground at all.
 export const optimumHobM = (kt: number) => Math.min(EXO_HEIGHT_M - 1000, Math.round(270 * Math.cbrt(kt)));
 
+// Rankine-Hugoniot relations for the shock front at sea level, G&D §3.55, with 14.7 psi and 1116 ft/s.
+const P0_PSI = 14.7;
+const C0_MS = 340;
+
+/** Shock front speed in m/s behind a peak overpressure in psi. */
+export const shockSpeedMs = (psi: number) => C0_MS * Math.sqrt(1 + (6 * psi) / (7 * P0_PSI));
+/** Peak wind in m/s behind the front. */
+export const peakWindMs = (psi: number) => ((5 * psi) / (7 * P0_PSI)) * C0_MS / Math.sqrt(1 + (6 * psi) / (7 * P0_PSI));
+/** Peak dynamic pressure in psi. */
+export const dynamicPsi = (psi: number) => (5 * psi * psi) / (2 * (7 * P0_PSI + psi));
+
+export interface ShockPoint {
+	km: number;
+	s: number;
+}
+
+/**
+ * Arrival of the front along the ground, integrating distance over shock speed at each range's own overpressure.
+ * An estimate built on Brode's pressures. On the way down to the ground from the burst, free air is taken as half
+ * the surface-burst pressure. Times come back in rising order, starting where the front first touches ground.
+ */
+export function shockArrival(kt: number, hobM: number, maxKm: number): ShockPoint[] {
+	if (hobM >= EXO_HEIGHT_M) return [];
+	const h = hobM / 1000;
+	const ground = psiProfile(kt, hobM);
+	const air = psiProfile(kt, 0);
+	const start = Math.max(0.0005 * Math.cbrt(kt), 1e-4);
+	const steps = 240;
+	const ratio = Math.pow(Math.hypot(maxKm, h) / start, 1 / steps);
+	const out: ShockPoint[] = [];
+	let s = start;
+	let t = 0;
+	for (let i = 0; i < steps; i++) {
+		const next = s * ratio;
+		const mid = Math.sqrt(s * next);
+		const r2 = mid * mid - h * h;
+		const psi = r2 > 0 ? ground(Math.sqrt(r2)) : air(mid) / 2;
+		t += ((next - s) * 1000) / shockSpeedMs(Math.max(psi, 0));
+		s = next;
+		const here = s * s - h * h;
+		if (here >= 0) out.push({ km: Math.sqrt(here), s: t });
+	}
+	return out;
+}
+
+/** Second thermal maximum in seconds, G&D §7.85. About 80% of the heat is out by ten of these. */
+export const thermalMaxS = (kt: number) => 0.0417 * Math.pow(kt, 0.44);
+
+/** The exposure that gives third-degree burns on medium skin at this yield, cal/cm². */
+export const burnThreshold = (kt: number) => lerpTable(THIRD_DEGREE, Math.log10(kt));
+
 export interface Rings {
 	fireball: number;
 	psi20: number;
@@ -208,7 +259,7 @@ const CONTACT_PARTITION: [number, number][] = [
 	[200, 0.35]
 ];
 
-function thermalPartition(kt: number, hobM: number): number {
+export function thermalPartition(kt: number, hobM: number): number {
 	const kft = (hobM * FT_PER_M) / 1000;
 	const col = clamp(Math.log10(kt), 0, 3.999);
 	const c = Math.floor(col);
@@ -568,7 +619,7 @@ export function cloudGeometry(kt: number): CloudGeometry {
 // Speed against height relative to the reported low-level wind, jet stream at 11 km and calm above 20 km.
 // This shape is an estimate of mid-latitude climatology, not from a cited table: the weather only gives
 // one number, so something has to say what a lofted cloud feels. It is what makes lofting matter.
-const WIND_PROFILE: [number, number][] = [
+export const WIND_PROFILE: [number, number][] = [
 	[0, 1],
 	[3, 1.2],
 	[6, 1.6],
@@ -580,7 +631,7 @@ const WIND_PROFILE: [number, number][] = [
 ];
 
 /** Mean relative wind from the ground up to an altitude. */
-function meanWindTo(km: number): number {
+export function meanWindTo(km: number): number {
 	let sum = 0;
 	let below = 0;
 	for (let i = 1; i < WIND_PROFILE.length && below < km; i++) {

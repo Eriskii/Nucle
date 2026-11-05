@@ -53,6 +53,8 @@
 		type HistoryEntry
 	} from '#lib/game/storage.ts';
 	import { hasDial, type Weapon } from '#lib/game/weapons.ts';
+	import Debrief from '#lib/ui/debrief/Debrief.svelte';
+	import { BUTTON_LABEL } from '#lib/ui/debrief/text.ts';
 	import Nixie from '#lib/ui/Nixie.svelte';
 	import Scope from '#lib/ui/Scope.svelte';
 	import { Soundscape, type SoundEvent } from '#lib/ui/sound.ts';
@@ -73,8 +75,8 @@
 
 	let scenario = $state.raw<Scenario | null>(null);
 	let data = $state.raw<TheatreData | null>(null);
-	let sim: Sim | null = null;
-	let solution: Placement[] = [];
+	let sim = $state.raw<Sim | null>(null);
+	let solution = $state.raw<Placement[]>([]);
 	let difficulty = $state.raw<Difficulty | null>(null);
 	let loadError = $state<string | null>(null);
 	let practice = $state(false);
@@ -100,6 +102,7 @@
 	let showFallout = $state(true);
 	let showDensity = $state(true);
 	let copied = $state(false);
+	let showDebrief = $state(false);
 
 	// Browsers only allow audio after a gesture, so the room comes alive on first touch.
 	let soundscape: Soundscape | null = null;
@@ -527,7 +530,8 @@
 
 				{#if final}
 					<section class="actions">
-						<button class="key lit wide" onclick={share}>{copied ? L.copied : L.copy}</button>
+						<button class="key lit wide learn" onclick={() => (showDebrief = true)}>{BUTTON_LABEL[lang]}</button>
+						<button class="key wide" onclick={share}>{copied ? L.copied : L.copy}</button>
 						<p class="engrave">{L.next}</p>
 					</section>
 				{:else}
@@ -639,6 +643,10 @@
 				{/if}
 			</aside>
 		</div>
+	{/if}
+
+	{#if showDebrief && scenario && data && final && sim}
+		<Debrief {scenario} {sim} outcome={final} meta={data.meta} grid={data.grid} {theme} {lang} {difficulty} {solution} onclose={() => (showDebrief = false)} />
 	{/if}
 
 	{#if showOrders}
@@ -1100,7 +1108,8 @@
 	}
 	.roll.reporting {
 		height: auto;
-		max-height: calc(100dvh - 240px);
+		/* Leaves room for the buttons below it, so they don't start off screen. */
+		max-height: calc(100dvh - 300px);
 	}
 	.roll p {
 		margin: 0 0 8px;
@@ -1159,6 +1168,9 @@
 		letter-spacing: 0.1em;
 		color: var(--text-dim);
 		text-shadow: var(--text-shadow);
+	}
+	.learn {
+		margin-bottom: 8px;
 	}
 	.engrave {
 		margin: 8px 0 0;
