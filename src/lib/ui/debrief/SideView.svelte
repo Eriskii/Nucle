@@ -5,7 +5,7 @@
 	import { peakWindMs, type Precip } from '#lib/game/effects.ts';
 	import { WEAPON_FACTS } from '#lib/game/weaponfacts.ts';
 	import { BlastEngine } from './blastEngine.ts';
-	import { momentAt, sceneFor, type Trail } from './blastState.ts';
+	import { HUMIDITY, moistureLiftKm, momentAt, riseOf, sceneFor, type Trail } from './blastState.ts';
 	import type { Fmt } from './fmt.ts';
 	import { Governor } from './gl.ts';
 	import WeaponView from './WeaponView.svelte';
@@ -30,6 +30,10 @@
 		upwind: string;
 		front: (km: string, psi: string, wind: string) => string;
 		pastFront: string;
+		insideFire: string;
+		rising: (speed: string) => string;
+		humidity: (share: string, lift: string) => string;
+		breached: string;
 		cloudTop: (km: string) => string;
 		refs: { everest: string; jet: string; stratopause: string };
 		rows: { psi20: string; psi5: string; psi1: string; burns: string; radiation: string };
@@ -92,14 +96,16 @@
 	const t = $derived(toT(u));
 	const before = $derived(u < PRE);
 	const now = $derived(flight.at(Math.min(t, 0)));
-	const m = $derived(momentAt(r, t));
+	const m = $derived(momentAt(r, t, precip));
 
 	const H = $derived(width < 620 ? 460 : 560);
 	const RULERS = 104;
 	const groundY = $derived(H - RULERS);
 	const hobKm = $derived(r.burst.hobM / 1000);
-	const cloudTopKm = $derived(r.cloud.centreKm + r.cloud.halfThicknessKm);
-	const reach = $derived(Math.max(r.rings.psi1, r.rings.thermal, r.rings.radiation, r.cloud.radiusKm, r.fireballKm, 0.05) * 1.1);
+	const risen = $derived(riseOf(r, precip));
+	const moisture = $derived(moistureLiftKm(r, precip));
+	const cloudTopKm = $derived(risen.topKm);
+	const reach = $derived(Math.max(r.rings.psi1, r.rings.thermal, r.rings.radiation, risen.at(900).r, r.fireballKm, 0.05) * 1.1);
 	const ppkBase = $derived(Math.min((width / 2 - 14) / reach, (groundY - 26) / Math.max(cloudTopKm * 1.08, hobKm * 1.1)));
 
 	// One scale for both axes, always. The camera backs off to keep the weapon or the drifting cap in frame.
@@ -206,7 +212,14 @@
 		out.push(-Math.min(0.7, flight.durationS * 0.1));
 		return out;
 	});
-	const postTimes = $derived([r.thermalMaxS * 0.5, r.thermalMaxS * 7, Math.min(r.shock.length ? r.shock[r.shock.length - 1].s * 0.4 : 20, 45), 240, 1800]);
+	// In order whatever the yield: a gigaton's thermal pulse alone outlasts a small burst's whole shock.
+	const postTimes = $derived.by(() => {
+		const flash = r.thermalMaxS * 0.5;
+		const fire = r.thermalMaxS * 7;
+		const shock = Math.max(fire * 1.4, Math.min(r.shock.length ? r.shock[r.shock.length - 1].s * 0.4 : 20, 45));
+		const cloud = Math.max(shock * 1.6, 240);
+		return [flash, fire, shock, cloud, Math.max(cloud * 2, 1800)];
+	});
 	const stageTimes = $derived([...preTimes, ...postTimes]);
 	const stageIndex = $derived.by(() => {
 		if (before) {
@@ -219,7 +232,7 @@
 		}
 		const tMax = r.thermalMaxS;
 		const end = r.shock.length ? r.shock[r.shock.length - 1].s : 30;
-		const post = t < tMax * 2 ? 0 : t < tMax * 10 ? 1 : t < Math.min(end, 60) ? 2 : t < 900 || r.coupling <= 0 ? 3 : 4;
+		const post = t < tMax * 2 ? 0 : t < tMax * 10 ? 1 : t < Math.max(Math.min(end, 60), tMax * 13) ? 2 : t < 900 || r.coupling <= 0 ? 3 : 4;
 		return preStages.length + post;
 	});
 	const stage = $derived(stages[Math.min(stageIndex, stages.length - 1)]);
@@ -397,6 +410,7 @@
 
 			{#if shockVisible && m.shockKm > 0 && X(m.shockKm) < width}
 				<line class="front" x1={X(m.shockKm)} x2={X(m.shockKm)} y1={Y(0, m.shockKm)} y2={Y(0, m.shockKm) - 22} />
+				<line class="front" x1={X(-m.shockKm)} x2={X(-m.shockKm)} y1={Y(0, m.shockKm)} y2={Y(0, m.shockKm) - 22} />
 			{/if}
 
 			<!-- The aircraft and the weapon, far too small to see at this scale, shown as markers. -->
@@ -463,16 +477,20 @@
 			{text.flightLine(F.km(walt), F.wind(now.speedMs))}
 		{/if}
 		{#if !before}
-			{#if m.shockKm > 0 && m.psi > 0}
+			{#if m.shockKm > 0 && m.shockKm < r.fireballKm}
+				{text.insideFire}
+			{:else if m.shockKm > 0 && m.psi > 0}
 				{text.front(F.km(m.shockKm), F.psi(m.psi), F.wind(peakWindMs(m.psi)))}
 			{:else if m.shockKm > 0}
 				{text.pastFront}
 			{/if}
-			{#if m.capOpacity > 0.3}{text.cloudTop(F.km(m.capAlt + m.capH))}{/if}
+			{#if m.capOpacity > 0.3}{text.cloudTop(F.km(m.capAlt + m.capH))} {#if m.w >= 1}{text.rising(F.wind(m.w))}{/if}{/if}
+			{#if risen.breached && t >= risen.peakS * 0.5}{text.breached}{/if}
 		{/if}
 	</p>
 	<p class="scale-note">
 		{text.scale}
+		{text.humidity(`${Math.round(HUMIDITY[precip] * 100)}%`, moisture >= 0.05 ? F.km(moisture) : '')}
 		{#if before}{text.enlarged}{/if}
 		{#if before && delivery.illustrative}{text.illustrative}{/if}
 		{#if before && flight.raised}{text.raised}{/if}

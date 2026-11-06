@@ -195,6 +195,12 @@
 				<p>{t.march.body}</p>
 				<March march={marchOf(d)} places={marchPlaces} day={scenario.day} map={theatreName} {F} labels={t.march} />
 				<p class="small">{t.march.note}</p>
+				{#if d.firestorm.state === 'burning'}
+					<p>{t.march.fire.burning(F.area(d.firestorm.areaKm2), F.count(d.firestorm.deaths))}</p>
+				{:else if d.firestorm.state !== 'none'}
+					<p>{t.march.fire[d.firestorm.state]}</p>
+				{/if}
+				{#if d.cancers >= 1}<p>{t.march.cancerNote(F.count(d.cancers))}</p>{/if}
 
 				<h3>{t.summary.causesHead}</h3>
 				<p>{t.summary.causesBody}</p>

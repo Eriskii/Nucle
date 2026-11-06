@@ -70,7 +70,7 @@ standing  = (1 - blast structure loss) × (1 - fire)
 
 Each value is averaged over four points across a cell's width, so the score changes smoothly as you drag a warhead and doesn't jump at cell edges.
 
-**Heights.** At or above 30 km there is no blast, prompt radiation or fallout. EMP applies, and heat can still reach the ground: X-rays and neutrons stop in thin air and heat it, and the hot air radiates down. Above 30 km the point source hands over to a single layer at 80 km that sends 20% of the yield toward the ground (both **estimates**). Burns from this need yields around 1 Gt: Starfish Prime gets 0.01 cal/cm², and 50 Mt at 100 km gets about 9, under the burn threshold.
+**Heights.** At or above 30 km there is no prompt radiation or fallout, and blast is the small estimate described below. EMP applies, and heat can still reach the ground: X-rays and neutrons stop in thin air and heat it, and the hot air radiates down. Above 30 km the point source hands over to a single layer at 80 km that sends 20% of the yield toward the ground (both **estimates**). Burns from this need yields around 1 Gt: Starfish Prime gets 0.01 cal/cm², and 50 Mt at 100 km gets about 9, under the burn threshold.
 
 ## Fallout
 
@@ -106,6 +106,31 @@ Report only, and never part of the score. Each cell's survivors are split once, 
 | Blast | 2% of the population above 12 psi, 40% at 5 to 12, 45% at 2 to 5, 25% at 1 to 2, capped at the survivors | OTA 1979 |
 | Burns | 25% of the remaining survivors inside any third-degree radius | **Estimate**, matches the burn fatality share |
 | Radiation sickness | All remaining survivors with a summed fallout dose of 100 rad or more | **Estimate**, threshold from G&D |
+
+## Firestorm and cancer
+
+Report only, and never part of the score. Both are deducted from survivors before injuries, so nobody counts twice.
+
+**Firestorm.** All four conditions must hold. They follow OTA 1979 as remembered: its PDF wouldn't load to re-check, so check them before quoting.
+
+| OTA condition | How it's read here |
+|---|---|
+| 8 lb of fuel per square foot | **Estimate:** 800 structures per km², since the map has no fuel data |
+| Half the buildings alight at once | Inside a third-degree burn radius |
+| Surface wind under 8 mph | **Estimate:** map wind of 26 km/h or less, taking the surface as half of it. Rain or snow also rules it out |
+| At least 0.5 square miles | 1.3 km² of such cells |
+
+30% of those left alive in those cells die (**game choice**).
+
+**Cancer.** Linear no-threshold: 5% fatal cancers per sievert (ICRP's nominal figure), with 100 rad as 1 Sv, capped at 400 rad. Dose is the sheltered fallout dose plus prompt dose, which is 400 rad inside the radiation radius and falls off with distance squared and a 300 m attenuation length (**estimate**). LNT is itself disputed at low doses.
+
+## Salted weapons
+
+Sodium-24 (15 h) and gold-198 (2.7 d) add an activity that decays exponentially, on top of the fission products' power law. The half-lives are physical. Added activity (2× and 1× the fission products at H+1) and two weeks of exposure are **game choices**. These appear from puzzle 3, so earlier days don't change.
+
+## Shock from heated air
+
+Above 30 km the shock is an **estimate**, not a simulation. A share of the yield falling from 100% at 30 km to 30% at 80 km acts at no more than 80 km, thinned by (80 km / height)² above that, and goes through the same Brode fit. It reaches 1 psi only at gigaton yields.
 
 ## Combining all the bursts
 

@@ -178,8 +178,19 @@ export interface Injuries {
 	total: number;
 }
 
+/** A mass fire in the burned-out centre. Report only, see docs/CALCULATIONS.md. */
+export interface Firestorm {
+	state: 'burning' | 'wind' | 'wet' | 'fuel' | 'none';
+	areaKm2: number;
+	deaths: number;
+	structures: number;
+}
+
 export interface DebriefData {
 	bursts: BurstReport[];
+	firestorm: Firestorm;
+	/** Excess fatal cancers among survivors by linear no-threshold, decades later. */
+	cancers: number;
 	injuries: Injuries;
 	/** People in cells where anyone died or was hurt. */
 	harmedPop: number;
@@ -237,6 +248,22 @@ const contourArea = (band: PlumeBand) => {
 const BURN_INJURY = 0.25;
 const SICKNESS_RAD = 100;
 
+// Firestorm reading of OTA's criteria. All estimates. The game's wind is for the lowest few km, so the surface is taken
+// as about half of it. Fuel can't be seen on the map, so a density of buildings stands in for it. A fifth to a third of
+// people died in the worst WWII firestorm areas, as commonly reported, hence this share of those left alive.
+const FIRE_WIND_KMH = 26;
+const FIRE_STRUCTURES_KM2 = 800;
+const FIRE_MIN_KM2 = 1.3;
+const FIRE_FATAL = 0.3;
+
+// Linear no-threshold: about 5% fatal cancers per sievert (ICRP's nominal figure), with 100 rad taken as 1 Sv.
+// Above this people mostly die of something sooner, and it is outside what the line was fitted to.
+const LNT_PER_SV = 0.05;
+const MAX_LNT_RAD = 400;
+// Prompt dose past the 1000 rad radius falls with distance squared and air attenuation, an estimate.
+const PROMPT_EDGE_RAD = 400;
+const PROMPT_FADE_KM = 0.3;
+
 // The rows of OTA 1979 Table 3, so each ring can carry that table's description of the damage.
 const ZONE_PSI = [20, 10, 5, 3, 1];
 const BIN_COUNT = 24;
@@ -274,7 +301,7 @@ function exoHeatCurve(kt: number, hobM: number, weather: Weather) {
 }
 
 export interface MarchStation {
-	cause: Cause;
+	cause: Cause | 'firestorm' | 'cancer';
 	deaths: number;
 	/** Deaths still to come after this station, counting this one's. */
 	before: number;
@@ -287,6 +314,8 @@ export interface March {
 	reached: number;
 	untouched: number;
 	deaths: number;
+	/** The part of the deaths the score counts. Firestorm and cancer deaths come on top. */
+	scored: number;
 	survivors: number;
 	injuries: Injuries;
 	stations: MarchStation[];
@@ -299,7 +328,8 @@ const ARRIVAL_ORDER: Cause[] = ['radiation', 'burns', 'blast', 'fallout'];
 export function marchOf(d: DebriefData): March {
 	const reached = d.harmedPop;
 	const untouched = Math.max(0, d.mapPop - reached);
-	let left = d.deaths;
+	const total = d.deaths + d.firestorm.deaths + d.cancers;
+	let left = total;
 	const stations: MarchStation[] = [];
 	for (const cause of ARRIVAL_ORDER) {
 		const deaths = d.causes[cause];
@@ -321,8 +351,17 @@ export function marchOf(d: DebriefData): March {
 			byWeapon: killers.map((b) => ({ index: b.index, deaths: b.causes[cause] })).sort((a, b) => b.deaths - a.deaths)
 		});
 		left -= deaths;
+		if (cause === 'blast' && d.firestorm.deaths >= 0.5) {
+			stations.push({ cause: 'firestorm', deaths: d.firestorm.deaths, before: left, byS: null, byWeapon: [{ index: -1, deaths: d.firestorm.deaths }] });
+			left -= d.firestorm.deaths;
+		}
 	}
-	return { reached, untouched, deaths: d.deaths, survivors: Math.max(0, reached - d.deaths), injuries: d.injuries, stations };
+	if (d.firestorm.deaths >= 0.5 && !stations.some((s) => s.cause === 'firestorm')) {
+		stations.push({ cause: 'firestorm', deaths: d.firestorm.deaths, before: left, byS: null, byWeapon: [{ index: -1, deaths: d.firestorm.deaths }] });
+		left -= d.firestorm.deaths;
+	}
+	if (d.cancers >= 0.5) stations.push({ cause: 'cancer', deaths: d.cancers, before: left, byS: null, byWeapon: [{ index: -1, deaths: d.cancers }] });
+	return { reached, untouched, deaths: total, scored: d.deaths, survivors: Math.max(0, reached - total), injuries: d.injuries, stations };
 }
 
 export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMeta): DebriefData {
@@ -563,7 +602,6 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 	const ota: OtaCheck = { fatal: 0, injured: 0 };
 	const peak = new Float32Array(n);
 	for (const b of bursts) {
-		if (b.hobM >= EXO_HEIGHT_M) continue;
 		const psiAt = psiProfile(b.kt, b.hobM);
 		const limit = blastRangeKm(1, b.kt, b.hobM);
 		for (let i = 0; i < n; i++) {
@@ -588,6 +626,9 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 	}
 
 	// Injured survivors, cell by cell, so nobody is counted both hurt and dead. Blast shares are OTA's, above.
+	// Firestorm conditions, from OTA 1979 as remembered: 8 lb of fuel per square foot, half the buildings alight at once,
+	// under 8 mph of surface wind and at least half a square mile. See docs/CALCULATIONS.md for how each is read here.
+	const prompt = new Float32Array(n);
 	const inBurns = new Uint8Array(n);
 	for (const r of reports) {
 		if (r.rings.thermal <= 0) continue;
@@ -596,12 +637,44 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 			if (distanceKm(grid.lat[i], grid.lon[i], r.burst.lat, r.burst.lon) <= r.rings.thermal) inBurns[i] = 1;
 		}
 	}
+	for (const r of reports) {
+		const R = r.rings.radiation;
+		if (R <= 0) continue;
+		const far = R + PROMPT_FADE_KM * 8;
+		for (let i = 0; i < n; i++) {
+			if (Math.abs(grid.lat[i] - r.burst.lat) * 111.2 > far) continue;
+			const km = distanceKm(grid.lat[i], grid.lon[i], r.burst.lat, r.burst.lon);
+			if (km <= far) prompt[i] += km <= R ? PROMPT_EDGE_RAD : PROMPT_EDGE_RAD * Math.pow(R / km, 2) * Math.exp(-(km - R) / PROMPT_FADE_KM);
+		}
+	}
+	const cellArea = grid.cellKm * grid.cellKm;
+	const dense = (i: number) => inBurns[i] === 1 && grid.structures[i] / cellArea >= FIRE_STRUCTURES_KM2;
+	let denseArea = 0;
+	let anyBurn = false;
+	for (let i = 0; i < n; i++) {
+		if (inBurns[i]) anyBurn = true;
+		if (dense(i)) denseArea += cellArea;
+	}
+	const wet = weather.precip === 'RAIN' || weather.precip === 'SNOW';
+	const fireState: Firestorm['state'] = !anyBurn ? 'none' : wet ? 'wet' : weather.windKmh > FIRE_WIND_KMH ? 'wind' : denseArea < FIRE_MIN_KM2 ? 'fuel' : 'burning';
+	const firestorm: Firestorm = { state: fireState, areaKm2: fireState === 'burning' ? denseArea : 0, deaths: 0, structures: 0 };
+	let cancers = 0;
 	const injuries: Injuries = { blast: 0, burns: 0, sickness: 0, total: 0 };
 	let harmedPop = 0;
 	for (let i = 0; i < n; i++) {
 		const pop = grid.pop[i];
 		const psi = peak[i];
-		const alive = pop * (1 - cellFatal[i]);
+		const direct = pop * (1 - cellFatal[i]);
+		const burned = fireState === 'burning' && dense(i);
+		const fireDead = burned ? direct * FIRE_FATAL : 0;
+		if (burned) {
+			firestorm.deaths += fireDead;
+			firestorm.structures += grid.structures[i];
+		}
+		const rad = Math.min(MAX_LNT_RAD, dose[i] + prompt[i]);
+		const cancer = (direct - fireDead) * (rad / 100) * LNT_PER_SV;
+		cancers += cancer;
+		const alive = direct - fireDead - cancer;
 		const share = psi > 12 ? 0.02 : psi > 5 ? 0.4 : psi > 2 ? 0.45 : psi > 1 ? 0.25 : 0;
 		const blast = Math.min(alive, pop * share);
 		// The same share the game kills inside the burn radius, as a matching share burned and alive.
@@ -610,7 +683,7 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 		injuries.blast += blast;
 		injuries.burns += burns;
 		injuries.sickness += sickness;
-		if (cellFatal[i] > 0 || blast + burns + sickness > 0) harmedPop += pop;
+		if (cellFatal[i] > 0 || fireDead + cancer + blast + burns + sickness > 0) harmedPop += pop;
 	}
 	injuries.total = injuries.blast + injuries.burns + injuries.sickness;
 
@@ -667,6 +740,8 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 	return {
 		bursts: reports,
 		ota,
+		firestorm,
+		cancers,
 		injuries,
 		harmedPop,
 		causes: totals,

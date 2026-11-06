@@ -128,9 +128,24 @@ function psiSlice(y: number): Float64Array {
 
 const scaledHeight = (hobM: number, scale: number) => (hobM * FT_PER_M) / 1000 / scale;
 
+// Above 30 km the shock comes from the heated air, not a point in thick air. An estimate, not a simulation: a falling
+// share of the yield at a height no greater than the layer, and past that thinned by how far the energy spreads out.
+const LAYER_BLAST_SHARE = 0.3;
+const LAYER_HEIGHT_M = 80000;
+
+function layerBlast(kt: number, hobM: number): { kt: number; hobM: number } {
+	const share = 1 + (LAYER_BLAST_SHARE - 1) * clamp((hobM - EXO_HEIGHT_M) / (LAYER_HEIGHT_M - EXO_HEIGHT_M), 0, 1);
+	const spread = hobM > LAYER_HEIGHT_M ? Math.pow(LAYER_HEIGHT_M / hobM, 2) : 1;
+	return { kt: kt * share * spread, hobM: Math.min(hobM, LAYER_HEIGHT_M) };
+}
+
 /** Overpressure in psi at a ground range. Cube-root scaling at sea-level ambient pressure. */
 export function psiProfile(kt: number, hobM: number): (km: number) => number {
-	if (hobM >= EXO_HEIGHT_M) return () => 0;
+	if (hobM >= EXO_HEIGHT_M) {
+		const source = layerBlast(kt, hobM);
+		kt = source.kt;
+		hobM = source.hobM;
+	}
 	const scale = Math.cbrt(kt);
 	const y = scaledHeight(hobM, scale);
 	if (y > Y_MAX) return () => 0;
@@ -152,7 +167,11 @@ export function psiProfile(kt: number, hobM: number): (km: number) => number {
 
 /** Ground range in km at which an overpressure is reached. 0 if it never is. */
 export function blastRangeKm(psi: number, kt: number, hobM: number): number {
-	if (hobM >= EXO_HEIGHT_M) return 0;
+	if (hobM >= EXO_HEIGHT_M) {
+		const source = layerBlast(kt, hobM);
+		kt = source.kt;
+		hobM = source.hobM;
+	}
 	const scale = Math.cbrt(kt);
 	const y = scaledHeight(hobM, scale);
 	if (y > Y_MAX) return 0;
@@ -809,6 +828,8 @@ function capDecades(p: CapSolved, x: number, y2: number, tMax: number): number {
 export interface FalloutField {
 	/** H+1 rate in rad/h, at km along and across the wind from ground zero. */
 	rateAt(downKm: number, crossKm: number): number;
+	/** Hours after the burst the fallout arrives at a downwind distance. */
+	arrivalH: (downKm: number) => number;
 	/** Dose in rad from a rate at a downwind distance, for people with the assumed shelter. */
 	doseAt(rate: number, downKm: number): number;
 	/** Downwind, upwind and half-width reach of the outermost contour, in km. */
@@ -822,6 +843,8 @@ const WSEG_MIN_ARRIVAL_H = 0.5;
 // to 0.6 in a frame house, 0.1 low in a block of flats and 0.05 to 0.1 in a basement. The 0.2 mix is an estimate.
 const TRUE_RATE = 1.33;
 const SHELTER = 0.2;
+/** How long people stay in a salted plume's fallout before leaving it, an estimate. */
+const SALT_EXPOSURE_H = 336;
 
 /** The field for a pattern at 100% fission, scaled by activity. Exposed for the tests against Miller. */
 export function patternField(
@@ -894,6 +917,7 @@ export function patternField(
 		upKm: up * KM_PER_MI,
 		halfWidthKm: half * KM_PER_MI,
 		rateAt: (downKm, crossKm) => rateMi(downKm / KM_PER_MI, crossKm / KM_PER_MI),
+		arrivalH: (downKm) => Math.max(WSEG_MIN_ARRIVAL_H, (downKm / KM_PER_MI - radiusMi) / capMph),
 		doseAt: (rate, downKm) => {
 			// G&D §9.91 for arrival, WSEG's half-hour floor, then Hanifen eq. 27 for dose per unit H+1 rate.
 			const arrive = Math.max(WSEG_MIN_ARRIVAL_H, (downKm / KM_PER_MI - radiusMi) / capMph);
@@ -919,7 +943,9 @@ export function falloutField(w: Weapon, kt: number, hobM: number, weather: Weath
 function buildField(w: Weapon, kt: number, hobM: number, weather: Weather): FalloutField | null {
 	if (hobM >= EXO_HEIGHT_M) return null;
 	// G&D §9.94: contour shapes follow total yield, dose rates scale with the fission share.
-	const source = fissionFractionAt(w, kt) * (w.salted ?? 1);
+	const fission = fissionFractionAt(w, kt) * (w.salted ?? 1);
+	const added = w.salt ? fissionFractionAt(w, kt) * w.salt.rate : 0;
+	const source = fission + added;
 	if (source <= 0) return null;
 	const coupling = groundCoupling(kt, hobM);
 	const share = rainoutShare(kt, weather.precip);
@@ -935,12 +961,24 @@ function buildField(w: Weapon, kt: number, hobM: number, weather: Weather): Fall
 		const tip = winds.cap * (SCAVENGE_HOURS + fall);
 		rainStretch = clamp(tip / capShape(kt, winds.cap).x9, 0.02, 1);
 	}
-	return patternField(kt, winds.cap, winds.stem, {
+	const field = patternField(kt, winds.cap, winds.stem, {
 		cap: source * coupling * (1 - share),
 		stem: source * coupling,
 		rain: source * wet,
 		rainStretch
 	});
+	if (!w.salt) return field;
+	// Fission products fade by a power law. A salt fades exponentially, so short-lived ones give their dose in days.
+	const mean = w.salt.halfLifeH / Math.LN2;
+	const saltShare = added / source;
+	const base = field.doseAt;
+	return {
+		...field,
+		doseAt: (rate, downKm) => {
+			const early = Math.exp(-(field.arrivalH(downKm) - 1) / mean) * (1 - Math.exp(-SALT_EXPOSURE_H / mean));
+			return base(rate * (1 - saltShare), downKm) + rate * saltShare * TRUE_RATE * SHELTER * mean * early;
+		}
+	};
 }
 
 export interface PlumeBand {

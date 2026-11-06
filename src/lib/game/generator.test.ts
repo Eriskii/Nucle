@@ -129,6 +129,24 @@ describe('thermal and prompt radiation against published figures', () => {
 		expect(thermalKm(10000000, 100000, clear)).toBeGreaterThan(thermalKm(1000000, 100000, clear));
 	});
 
+	it('gives a shock from heated air only at absurd yields', () => {
+		// Starfish Prime left no shock on the ground.
+		expect(blastRangeKm(0.1, 1400, 400000)).toBeLessThan(10);
+		expect(blastRangeKm(1, 2000, 100000)).toBe(0);
+		expect(blastRangeKm(1, 1e7, 100000)).toBeGreaterThan(0);
+		near(blastRangeKm(1, 15000, 29000), blastRangeKm(1, 15000, 31000), 0.2);
+	});
+
+	it('makes a short-lived salt give its dose fast and fade', () => {
+		const dose = (id: string, down: number) => {
+			const f = falloutField(weaponById(id), 2000, 0, clear)!;
+			return f.doseAt(f.rateAt(down, 0), down);
+		};
+		// A plain device of the same yield and fission share gives less near the burst.
+		expect(dose('sodium', 40)).toBeGreaterThan(dose('b83', 40));
+		expect(dose('gold', 40)).toBeGreaterThan(dose('sodium', 40));
+	});
+
 	it('has no jump in heat across the 30 km line', () => {
 		near(thermalKm(15000, 29000, clear), thermalKm(15000, 31000, clear), 0.1);
 	});

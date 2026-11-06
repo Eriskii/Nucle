@@ -59,8 +59,8 @@ function rollWeather(rng: Rng): Weather {
 	};
 }
 
-function rollArsenal(rng: Rng, theatre: Theatre, kind: ObjectiveKind): Weapon[] {
-	const pool = WEAPONS.filter((w) => w.tiers.includes(theatre.kind));
+function rollArsenal(rng: Rng, theatre: Theatre, kind: ObjectiveKind, day: number): Weapon[] {
+	const pool = WEAPONS.filter((w) => w.tiers.includes(theatre.kind) && (w.since ?? 0) <= day);
 	const [lo, hi] = theatre.kind === 'city' ? [2, 5] : theatre.kind === 'region' ? [3, 8] : [5, 10];
 	if (kind === 'blackout') {
 		const strategic = WEAPONS.filter((w) => !w.surfaceOnly && w.maxKt >= 100 && w.maxKt <= 2000);
@@ -337,7 +337,7 @@ function buildBase(day: number, attempt: number, theatre: Theatre, data: Theatre
 		date: dateOfDay(day),
 		theatre,
 		weather: rollWeather(rng),
-		arsenal: rollArsenal(rng, theatre, kind),
+		arsenal: rollArsenal(rng, theatre, kind, day),
 		kind,
 		goal: 0,
 		par: 0,
@@ -435,7 +435,7 @@ export function generate(day: number, data: TheatreData): Generated {
 		date: dateOfDay(day),
 		theatre,
 		weather: rollWeather(rng),
-		arsenal: rollArsenal(rng, theatre, 'fatalities'),
+		arsenal: rollArsenal(rng, theatre, 'fatalities', day),
 		kind: 'fatalities',
 		goal: 0,
 		par: 0,

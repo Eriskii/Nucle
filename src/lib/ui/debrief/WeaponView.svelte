@@ -33,8 +33,8 @@
 
 	const length = $derived(facts.lengthM ?? 1);
 	const look = $derived(LOOKS[id]);
-	/** Far enough back to fit the length across the frame and the diameter up it. The lens has a focal length of 2.4. */
-	const framing = $derived(Math.max((0.74 * 2.4 * height) / Math.max(width, 1), ((facts.diameterM ?? 0.3) / length) * 2.4 * 0.95 + 0.7));
+	/** Far enough back to fit the length across the frame and the diameter up it, with room for a stubby weapon's near end as it turns. The lens has a focal length of 2.4. */
+	const framing = $derived(Math.max((0.74 * 2.4 * height) / Math.max(width, 1), ((facts.diameterM ?? 0.3) / length) * 2.4 * 0.95 + 0.7) + ((facts.diameterM ?? 0.3) / length) * 1.4);
 
 	function draw() {
 		if (!engine) return;

@@ -7,6 +7,7 @@
 	import { fissionFractionAt, hasDial } from '#lib/game/weapons.ts';
 	import DistanceBars from './DistanceBars.svelte';
 	import ExoCoupling from './ExoCoupling.svelte';
+	import ExoScene from './ExoScene.svelte';
 	import ExoView from './ExoView.svelte';
 	import FalloutPlan from './FalloutPlan.svelte';
 	import type { Fmt } from './fmt.ts';
@@ -227,6 +228,7 @@
 	{#if r.exo}
 		<section>
 			<h3>{W.sectionExo}</h3>
+			{#key r.index}<ExoScene {r} {F} text={W.exoScene} {grade} />{/key}
 			<ExoView {r} {F} labels={W.exoLabels} />
 			<p>{W.exoBody}</p>
 			<p>{W.exoCoupling(F.pct(r.fissionShare))}</p>

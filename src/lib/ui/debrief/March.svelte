@@ -19,6 +19,7 @@
 		hint: string;
 		desc: (deaths: string, injured: string) => string;
 		injured: string;
+		scored: (n: string) => string;
 		injuredRead: (total: string, blast: string, burns: string, sickness: string) => string;
 		key: { living: string; hurt: string; doomed: string; figure: string };
 	}
@@ -45,7 +46,7 @@
 	const DURATION = 10000;
 	/** The line first advances across the page, then the piles fill. Shares of the run. */
 	const REVEAL = 0.13;
-	const STARTS: Record<string, [number, number]> = { radiation: [0.12, 0.42], burns: [0.15, 0.5], blast: [0.22, 0.56], fallout: [0.5, 0.5], injured: [0.3, 0.7] };
+	const STARTS: Record<string, [number, number]> = { radiation: [0.12, 0.42], burns: [0.15, 0.5], blast: [0.22, 0.56], firestorm: [0.34, 0.5], fallout: [0.5, 0.5], cancer: [0.66, 0.34], injured: [0.3, 0.7] };
 	const NICE = [1, 2, 5];
 	const WALKER = 8;
 
@@ -463,11 +464,13 @@
 		// Figures written on the band.
 		b.textAlign = 'left';
 		b.fillStyle = colours.ink;
-		const startH = bottom[0].y - top[0].y;
+		// Above the band, because the dark vein can fill most of it.
 		b.font = `700 ${narrow ? 11 : 14}px ${mono}`;
-		b.fillText(F.count(march.reached), left + 7, top[0].y + Math.min(startH * 0.34, 28) + 4);
+		const reachedText = F.count(march.reached);
+		b.fillText(reachedText, left + 3, top[0].y - 7);
+		const reachedW = b.measureText(reachedText).width;
 		b.font = `${narrow ? 9.5 : 11.5}px ${mono}`;
-		b.fillText(labels.reached, left + 7, top[0].y + Math.min(startH * 0.34, 28) + (narrow ? 15 : 19));
+		b.fillText(labels.reached, left + 3 + reachedW + 6, top[0].y - 7);
 		// Who walks off the end of the sheet. Lettered across the band if there's room, otherwise above it.
 		b.textAlign = 'right';
 		b.lineJoin = 'round';
@@ -632,6 +635,9 @@
 		ctx.font = `${narrow ? 10.5 : 12}px ${mono}`;
 		ctx.fillStyle = colours.ink;
 		ctx.fillText(labels.dead, 2 + after, narrow ? 24 : 36);
+		if (march.deaths - march.scored >= 0.5) {
+			ctx.fillText(labels.scored(F.count(march.scored)), 2, narrow ? 54 : 78);
+		}
 		if (march.injuries.total >= 0.5) {
 			ctx.font = `700 ${narrow ? 13 : 19}px ${mono}`;
 			ctx.fillStyle = colours.hurt;

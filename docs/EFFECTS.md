@@ -151,6 +151,26 @@ Blast, heat and fallout at Gnomon and Sundial yields are extrapolations from fit
 
 A what-if, not a real weapon. Grams (*Journal of Cold War Studies* 23:2, 2021) reports Housatonic at 9.96 Mt, 7,139 lb, an estimated 99.9% clean, a 1962 request for maximum yield in about 6,000 lb for the Titan II, and a predicted 30 to 40 Mt for the fully fuelled device. The game uses 35 Mt at a 0.1% fission share. The size drawn is the Titan II's reentry vehicle. Its shape is a guess.
 
+## Rising air and dust
+
+The side view's cloud (`cloudrise.ts`) isn't a curve fit. It follows a buoyant thermal after Morton, Taylor & Turner (1956): mass, momentum, heat and water of a hot blob that mixes in surrounding air as it climbs through a US Standard Atmosphere 1976. Where it stops, it flattens as a gravity current. Dust falls at terminal speeds from drag on each grain size (Schiller-Naumann), with viscosity from Sutherland's law.
+
+Two numbers are fitted: 35% of the yield stays as heat in the rising air, and the mixing rate is 0.13. Everything else is physics.
+
+| Case | Model top | Published |
+|---|---|---|
+| Little Feller I, 18 t | 1.7 km | 11,000 ft, taken as above sea level over ground near 5,000 ft: about 1.9 km |
+| 1 Mt | 21.7 km | about 22 km (G&D, read from memory) |
+| 1 Mt centre at 2.5 min | 15.4 km | 10 miles (G&D Table 2.12) |
+| Castle Bravo, 15 Mt | 41 km | about 40 km |
+| Tsar Bomba, 50 Mt | 68 km | about 65 km |
+
+**Moisture.** Entrained vapour condenses past saturation (Magnus formula) and releases latent heat, with the extra for ice below freezing. Vapour and condensed water count in the density, and water above 3 g/kg falls out. Air dries to almost nothing above the tropopause. The table above is for dry air. Moisture barely moves megaton clouds (1 Mt: 21.7 to 22.2 km at 95% humidity) and dominates tiny ones (18 t: 1.7 to 3.6 km). The game's weather carries no humidity, so CLEAR 45%, HAZE 65%, OVERCAST 80%, RAIN 95% and SNOW 85% are estimates. All air is taken at standard temperature, so these don't vary with climate.
+
+**Limits.** No wind shear, and no radiative cooling. A 1 Gt thermal is larger than the atmosphere's scale height, so the model stops applying: it's held at 90 km and flagged. Spreading speed and the minimum thickness are estimates. The grain size split is an estimate.
+
+**Not used for fallout.** The fallout map and score keep Miller's fits. So the side view's cloud can differ from cloud figures elsewhere in the report, most at very low yields, where Miller is extrapolated well below his 1 kt limit (436 m for Davy Crockett against about 2 km observed).
+
 ## Precipitation handling, summary
 
 CLEAR and HAZE don't change fallout. OVERCAST doesn't either, since no rain falls out of it in this model. RAIN and SNOW scavenge as above, which also gives air bursts a small plume in the rain. The old `THERMAL_FACTOR` table is gone, replaced by visibility and cloud geometry.

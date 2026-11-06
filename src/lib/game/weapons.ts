@@ -14,6 +14,10 @@ export interface Weapon {
 	fission: FissionCurve;
 	/** Game abstraction for long-lived activity, not a physical H+1 factor. See docs/EFFECTS.md. */
 	salted?: number;
+	/** An added activity that decays exponentially: its half-life, and its H+1 rate as a multiple of the fission products'. Game choices. */
+	salt?: { isotope: string; halfLifeH: number; rate: number };
+	/** First puzzle this can appear in, so adding a weapon leaves earlier days alone. */
+	since?: number;
 	/** Prompt radiation radius multiplier for enhanced-radiation designs. */
 	enhanced?: number;
 	/** Delivery forces a surface burst. */
@@ -48,6 +52,8 @@ export const WEAPONS: Weapon[] = [
 	{ id: 'ss18', name: 'R-36M SATAN', note: 'HEAVY ICBM SINGLE WARHEAD', minKt: 18000, maxKt: 25000, fission: HALF, tiers: ['region', 'world'] },
 	{ id: 'pos', name: 'STATUS-6 POSEIDON', note: 'COASTAL TORPEDO', minKt: 2000, maxKt: 2000, fission: HALF, salted: 2, surfaceOnly: true, tiers: ['region'] },
 	{ id: 'cob', name: 'COBALT SALTED DEVICE', note: 'THEORETICAL, SZILARD 1950', minKt: 1000, maxKt: 5000, fission: HALF, salted: 5, theoretical: true, tiers: ['city', 'region', 'world'] },
+	{ id: 'sodium', name: 'SODIUM SALTED DEVICE', note: 'THEORETICAL, NA-24, 15 H HALF-LIFE', minKt: 1000, maxKt: 5000, fission: HALF, salt: { isotope: 'Na-24', halfLifeH: 15, rate: 2 }, theoretical: true, since: 3, tiers: ['city', 'region', 'world'] },
+	{ id: 'gold', name: 'GOLD SALTED DEVICE', note: 'THEORETICAL, AU-198, 2.7 D HALF-LIFE', minKt: 1000, maxKt: 5000, fission: HALF, salt: { isotope: 'Au-198', halfLifeH: 65, rate: 1 }, theoretical: true, since: 3, tiers: ['city', 'region', 'world'] },
 	{ id: 'ripple', name: 'RIPPLE TITAN II', note: 'UNBUILT CLEAN WARHEAD, 1962', minKt: 35000, maxKt: 35000, fission: [[1, 0.001]], theoretical: true, tiers: ['region', 'world'] },
 	{ id: 'tsar', name: 'TSAR BOMBA', note: 'NOVAYA ZEMLYA 1961', minKt: 50000, maxKt: 50000, fission: [[1, 0.03]], tiers: ['region', 'world'] },
 	{ id: 'tsar2', name: 'TSAR BOMBA FULL', note: 'AS DESIGNED, U-238 TAMPER', minKt: 100000, maxKt: 100000, fission: HALF, theoretical: true, tiers: ['region', 'world'] },

@@ -41,10 +41,13 @@ export const DELIVERY: Record<string, Delivery> = {
 	ss18: { kind: 'reentry', carrier: 'R-36M', startM: 100000, speedMs: 6700, diveDeg: 25 },
 	pos: { kind: 'torpedo', carrier: 'Status-6', startM: 0, speedMs: 36, diveDeg: 0, illustrative: true },
 	cob: { kind: 'unbuilt', startM: 0, speedMs: 0, diveDeg: 0 },
+	sodium: { kind: 'unbuilt', startM: 0, speedMs: 0, diveDeg: 0 },
+	gold: { kind: 'unbuilt', startM: 0, speedMs: 0, diveDeg: 0 },
 	ripple: { kind: 'reentry', carrier: 'Titan II', startM: 100000, speedMs: 6700, diveDeg: 25 },
 	tsar: { kind: 'retarded', carrier: 'Tu-95', startM: 10500, speedMs: 200, diveDeg: 0, terminalMs: 35 },
 	tsar2: { kind: 'retarded', carrier: 'Tu-95', startM: 10500, speedMs: 200, diveDeg: 0, terminalMs: 35 },
-	gnomon: { kind: 'unbuilt', startM: 0, speedMs: 0, diveDeg: 0 },
+	// Nothing could lift it. A nuclear pulse vehicle in the style of Project Orion is one imagined way, entirely speculative.
+	gnomon: { kind: 'reentry', carrier: 'Orion-type pulse vehicle', startM: 100000, speedMs: 6700, diveDeg: 25, illustrative: true },
 	sundial: { kind: 'unbuilt', startM: 0, speedMs: 0, diveDeg: 0 }
 };
 
@@ -72,13 +75,15 @@ export interface Flight {
 }
 
 const LEAD_S = 12;
+const CRUISE_DIVE_S = 2.5;
 
 /** Integrates from release down to the burst height, then measures time back from detonation. */
 export function flightFor(id: string, hobM: number): Flight {
 	const delivery = DELIVERY[id];
 	const { kind } = delivery;
-	const raised = delivery.startM < hobM + 300 && kind !== 'torpedo' && kind !== 'emplaced' && kind !== 'unbuilt';
-	const start = raised ? hobM + Math.max(1500, hobM * 0.3) : delivery.startM;
+	// A cruise missile dives from its own low height, so a ground burst needs no extra room.
+	const raised = kind === 'cruise' ? delivery.startM < hobM : delivery.startM < hobM + 300 && kind !== 'torpedo' && kind !== 'emplaced' && kind !== 'unbuilt';
+	const start = raised ? hobM + Math.max(kind === 'cruise' ? 100 : 1500, hobM * 0.3) : delivery.startM;
 	const pts: FlightPoint[] = [];
 
 	if (kind === 'unbuilt' || kind === 'emplaced' || kind === 'torpedo') {
@@ -129,11 +134,19 @@ export function flightFor(id: string, hobM: number): Flight {
 			time += dt;
 		}
 		const end = raw[raw.length - 1];
+		// The cruise missile's last seconds: from its route height down to the burst.
+		const cruiseAlt = (t: number) => (t < -CRUISE_DIVE_S ? start : hobM + (start - hobM) * (-t / CRUISE_DIVE_S));
+		const cruiseDive = (Math.atan2(start - hobM, delivery.speedMs * CRUISE_DIVE_S) * 180) / Math.PI;
 		for (let i = 0; i < raw.length; i += Math.max(1, Math.floor(raw.length / 240))) {
 			const p = raw[i];
-			pts.push({ t: p.time - end.time, altM: kind === 'cruise' ? Math.max(hobM, start) : p.z, xM: p.x - end.x, speedMs: p.v, diveDeg: p.dive });
+			const at = p.time - end.time;
+			pts.push({ t: at, altM: kind === 'cruise' ? cruiseAlt(at) : p.z, xM: p.x - end.x, speedMs: p.v, diveDeg: kind === 'cruise' && at >= -CRUISE_DIVE_S ? cruiseDive : p.dive });
 		}
-		pts.push({ t: 0, altM: Math.max(hobM, kind === 'cruise' ? start : hobM), xM: 0, speedMs: end.v, diveDeg: end.dive });
+		if (kind === 'cruise') {
+			pts.push({ t: -CRUISE_DIVE_S, altM: start, xM: -end.v * CRUISE_DIVE_S, speedMs: end.v, diveDeg: 0 });
+			pts.sort((a, b) => a.t - b.t);
+		}
+		pts.push({ t: 0, altM: hobM, xM: 0, speedMs: end.v, diveDeg: kind === 'cruise' ? cruiseDive : end.dive });
 	}
 
 	const fall = -pts[0].t;
