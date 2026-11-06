@@ -56,6 +56,8 @@ export interface Theme {
 	psi20: string;
 	fireball: string;
 	plume: string;
+	/** "r, g, b" of the bare display or sheet, for dimming the map beneath an overlay. */
+	veil: string;
 	empFill: string;
 	damageHot: string;
 	damageWarm: string;
@@ -107,11 +109,12 @@ export const THEMES: Record<ThemeId, Theme> = {
 		roadAlpha: 1,
 		roadCore: '#100e04',
 		thermal: 'rgba(255, 154, 74, 0.72)',
-		psi1: 'rgba(243, 229, 138, 0.55)',
+		psi1: 'rgba(243, 229, 138, 0.85)',
 		psi5: 'rgba(250, 240, 170, 0.95)',
 		psi20: '#f5f6ff',
 		fireball: 'rgba(245, 246, 255, 0.55)',
-		plume: '226, 235, 160',
+		plume: '120, 240, 170',
+		veil: '14, 12, 4',
 		empFill: 'rgba(225, 230, 255, 0.05)',
 		damageHot: '255, 248, 218',
 		damageWarm: '255, 164, 74',
@@ -160,11 +163,12 @@ export const THEMES: Record<ThemeId, Theme> = {
 		roadAlpha: 1,
 		roadCore: '#051005',
 		thermal: 'rgba(255, 177, 59, 0.72)',
-		psi1: 'rgba(166, 232, 108, 0.55)',
+		psi1: 'rgba(166, 232, 108, 0.85)',
 		psi5: 'rgba(205, 245, 160, 0.95)',
 		psi20: '#e6ffd0',
 		fireball: 'rgba(230, 255, 208, 0.55)',
-		plume: '205, 225, 90',
+		plume: '90, 225, 245',
+		veil: '4, 14, 6',
 		empFill: 'rgba(200, 255, 200, 0.05)',
 		damageHot: '250, 255, 215',
 		damageWarm: '255, 170, 60',
@@ -218,6 +222,7 @@ export const THEMES: Record<ThemeId, Theme> = {
 		psi20: 'rgba(120, 12, 10, 1)',
 		fireball: 'rgba(120, 12, 10, 0.32)',
 		plume: '40, 70, 150',
+		veil: '240, 231, 208',
 		empFill: 'rgba(40, 70, 150, 0.06)',
 		damageHot: '150, 18, 12',
 		damageWarm: '205, 110, 25',

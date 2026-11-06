@@ -697,8 +697,8 @@
 			c.width = 12;
 			c.height = 12;
 			const h = c.getContext('2d')!;
-			h.strokeStyle = `rgba(${theme.plume}, 0.55)`;
-			h.lineWidth = 1.1;
+			h.strokeStyle = `rgba(${theme.plume}, 0.8)`;
+			h.lineWidth = 1.3;
 			h.beginPath();
 			h.moveTo(-3, 15);
 			h.lineTo(15, -3);
@@ -722,8 +722,14 @@
 		const paper = !theme.emissive;
 		if (showFallout) {
 			const bands = falloutBands(b.weapon, b.kt, b.hobM, scenario.weather);
-			bands.forEach((band, i) => {
-				plumePath(ctx, b.lat, b.lon, band, grow);
+			// The map is dimmed under the widest contour, so streets can't compete with what's on top of them.
+			if (bands.length) {
+				plumePath(ctx, b.lat, b.lon, bands[bands.length - 1], grow);
+				ctx.fillStyle = `rgba(${theme.veil}, ${paper ? 0.6 : 0.68})`;
+				ctx.fill();
+			}
+			for (let i = bands.length - 1; i >= 0; i--) {
+				plumePath(ctx, b.lat, b.lon, bands[i], grow);
 				if (paper) {
 					// Hatched by hand, with the hottest contour hatched closest.
 					if (i <= 1) {
@@ -733,16 +739,17 @@
 							ctx.fill();
 						}
 					}
-					ctx.strokeStyle = `rgba(${theme.plume}, ${[0.95, 0.8, 0.6, 0.4][i]})`;
-					ctx.lineWidth = 1.5;
 				} else {
-					ctx.fillStyle = `rgba(${theme.plume}, ${[0.15, 0.08, 0.05, 0.025][i]})`;
+					ctx.fillStyle = `rgba(${theme.plume}, ${[0.2, 0.13, 0.09, 0.07][i]})`;
 					ctx.fill();
-					ctx.strokeStyle = `rgba(${theme.plume}, ${[0.9, 0.6, 0.4, 0.25][i]})`;
-					ctx.lineWidth = 1;
 				}
+				ctx.strokeStyle = `rgba(${theme.veil}, 0.85)`;
+				ctx.lineWidth = paper ? 3.5 : 3.2;
 				ctx.stroke();
-			});
+				ctx.strokeStyle = `rgba(${theme.plume}, ${[1, 0.9, 0.8, 0.7][i]})`;
+				ctx.lineWidth = paper ? 2 : 1.4;
+				ctx.stroke();
+			}
 		}
 
 		if (showRings) {
@@ -758,27 +765,37 @@
 				ctx.fill();
 			}
 			const circles: [number, string, number, number[]][] = [
-				[rings.thermal, theme.thermal, 1, [3, 4]],
-				[rings.psi1, theme.psi1, 1, []],
-				[rings.psi5, theme.psi5, 1.3, []],
-				[rings.psi20, theme.psi20, 1.5, []]
+				[rings.thermal, theme.thermal, 1.4, [3, 4]],
+				[rings.psi1, theme.psi1, 1.3, []],
+				[rings.psi5, theme.psi5, 1.6, []],
+				[rings.psi20, theme.psi20, 1.8, []]
 			];
+			const reach = Math.max(rings.thermal, rings.psi1) * pxPerKm * grow;
+			if (reach > 1.5) {
+				ctx.beginPath();
+				ctx.arc(x, y, reach, 0, 2 * Math.PI);
+				ctx.fillStyle = `rgba(${theme.veil}, ${paper ? 0.22 : 0.34})`;
+				ctx.fill();
+			}
 			circles.forEach(([km, color, width, dash], i) => {
 				if (km <= 0) return;
 				// On paper a ring is drawn around its compass, not grown from the centre.
 				const px = km * pxPerKm * (paper ? 1 : grow);
 				if (px < 1.5) return;
-				ctx.strokeStyle = color;
 				if (paper) {
 					pencilRing(ctx, x, y, px, p.slot * 1.7 + i, grow);
-					ctx.lineWidth = width + 1;
-					ctx.setLineDash(dash.length ? [5, 5] : []);
 				} else {
 					ctx.beginPath();
 					ctx.arc(x, y, px, 0, 2 * Math.PI);
-					ctx.lineWidth = width;
-					ctx.setLineDash(dash);
 				}
+				const line = paper ? width + 1 : width;
+				ctx.setLineDash([]);
+				ctx.strokeStyle = `rgba(${theme.veil}, 0.85)`;
+				ctx.lineWidth = line + 2.4;
+				ctx.stroke();
+				ctx.setLineDash(paper && dash.length ? [5, 5] : dash);
+				ctx.strokeStyle = color;
+				ctx.lineWidth = line;
 				ctx.stroke();
 			});
 			ctx.setLineDash([]);
@@ -1038,12 +1055,13 @@
 		}
 
 		ctx.globalAlpha = theme.motion === 'refresh' ? 0.86 + 0.14 * rewrite : 1;
-		drawObjectives(ctx, now);
 		if (playing) {
 			drawPlayback(ctx, now);
 		} else {
 			for (const p of placements) drawBurst(ctx, p);
 		}
+		// After the bursts, because a plume dims what's beneath it.
+		drawObjectives(ctx, now);
 		ctx.globalAlpha = 1;
 		drawWind(ctx);
 
