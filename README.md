@@ -11,6 +11,15 @@ npm test                  # add NUCLE_DAYS=365 to audit a full year of puzzles
 npm run build             # static site in build/
 ```
 
+Or with Nix, which supplies Node for you:
+
+```sh
+nix develop               # shell with Node, then use the npm commands above
+nix build                 # static site in result/
+nix run                   # serve it on http://localhost:4173, or nix run . -- 8080
+nix flake check           # run the tests
+```
+
 `?day=N` opens any puzzle number, unscored.
 
 ## How puzzles work
