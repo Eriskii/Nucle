@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { analyze, CAUSES } from './debrief';
+import { analyze, CAUSES, marchOf } from './debrief';
 import { decodeGrid, type TheatreData, type TheatreMeta } from './data';
 import { DELIVERY, flightFor } from './delivery';
 import { dynamicPsi, peakWindMs, shockArrival, shockSpeedMs } from './effects';
@@ -50,6 +50,19 @@ describe('post-strike report', () => {
 			const pop = d.bands.reduce((sum, b) => sum + b.pop, 0);
 			expect(Math.abs(pop - data.grid.pop.reduce((a, b) => a + b, 0))).toBeLessThan(pop * 1e-3);
 			if (d.worked) expect(d.worked.fatal).toBeGreaterThan(0);
+			// The flow map's bands account for everyone it draws.
+			const m = marchOf(d);
+			const marched = m.stations.reduce((sum, s) => sum + s.deaths, 0);
+			expect(Math.abs(marched - m.deaths)).toBeLessThan(tol + m.stations.length);
+			expect(Math.abs(m.survivors + m.deaths - m.reached)).toBeLessThan(1);
+			// Nobody is both dead and hurt, and the hurt are among those in reach.
+			expect(m.injuries.total).toBeLessThanOrEqual(m.survivors + 1);
+			expect(Math.abs(m.injuries.blast + m.injuries.burns + m.injuries.sickness - m.injuries.total)).toBeLessThan(1);
+			expect(m.reached + m.untouched).toBeLessThanOrEqual(d.mapPop + Math.max(1, d.mapPop * 1e-6) + m.deaths * 1e-3);
+			for (const s of m.stations) {
+				const split = s.byWeapon.reduce((sum, w) => sum + w.deaths, 0);
+				expect(Math.abs(split - s.deaths)).toBeLessThan(Math.max(1, s.deaths * 1e-3) + s.byWeapon.length);
+			}
 			for (const b of d.bursts) {
 				// A weapon can add more than it kills alone, because fallout doses stack past the lethal threshold.
 				expect(b.marginalDeaths).toBeGreaterThanOrEqual(-1);

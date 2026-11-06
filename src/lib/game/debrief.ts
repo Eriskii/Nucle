@@ -170,8 +170,19 @@ export interface OtaCheck {
 	injured: number;
 }
 
+/** Survivors who are hurt, each counted once. See docs/CALCULATIONS.md. */
+export interface Injuries {
+	blast: number;
+	burns: number;
+	sickness: number;
+	total: number;
+}
+
 export interface DebriefData {
 	bursts: BurstReport[];
+	injuries: Injuries;
+	/** People in cells where anyone died or was hurt. */
+	harmedPop: number;
 	ota: OtaCheck;
 	causes: CauseSplit;
 	deaths: number;
@@ -222,6 +233,10 @@ const contourArea = (band: PlumeBand) => {
 	return area;
 };
 
+// Estimates, for counting survivors who are hurt. Radiation sickness starts near 100 rad (G&D Table 12.108).
+const BURN_INJURY = 0.25;
+const SICKNESS_RAD = 100;
+
 // The rows of OTA 1979 Table 3, so each ring can carry that table's description of the damage.
 const ZONE_PSI = [20, 10, 5, 3, 1];
 const BIN_COUNT = 24;
@@ -256,6 +271,58 @@ function exoHeatCurve(kt: number, hobM: number, weather: Weather) {
 		out.push({ km, cal: thermalExposure(kt, hobM, Math.hypot(km, h) / 1.609344, weather) });
 	}
 	return out;
+}
+
+export interface MarchStation {
+	cause: Cause;
+	deaths: number;
+	/** Deaths still to come after this station, counting this one's. */
+	before: number;
+	/** Latest time this hazard arrives anywhere it killed, in seconds. Null for fallout, which is hours. */
+	byS: number | null;
+	byWeapon: { index: number; deaths: number }[];
+}
+
+export interface March {
+	reached: number;
+	untouched: number;
+	deaths: number;
+	survivors: number;
+	injuries: Injuries;
+	stations: MarchStation[];
+}
+
+// Hazards in the order they arrive: gamma rays, the thermal pulse, the shock, then what falls from the cloud.
+const ARRIVAL_ORDER: Cause[] = ['radiation', 'burns', 'blast', 'fallout'];
+
+/** The people in reach of the plan, losing each cause's dead in turn, for the report's flow map. */
+export function marchOf(d: DebriefData): March {
+	const reached = d.harmedPop;
+	const untouched = Math.max(0, d.mapPop - reached);
+	let left = d.deaths;
+	const stations: MarchStation[] = [];
+	for (const cause of ARRIVAL_ORDER) {
+		const deaths = d.causes[cause];
+		if (deaths < 0.5) continue;
+		const killers = d.bursts.filter((b) => b.causes[cause] >= 0.5);
+		const byS =
+			cause === 'radiation'
+				? 1
+				: cause === 'burns'
+					? Math.max(...killers.map((b) => b.thermalMaxS))
+					: cause === 'blast'
+						? Math.max(0, ...killers.flatMap((b) => b.zones.filter((z) => z.deaths >= 0.5).map((z) => z.arrivalS)))
+						: null;
+		stations.push({
+			cause,
+			deaths,
+			before: left,
+			byS,
+			byWeapon: killers.map((b) => ({ index: b.index, deaths: b.causes[cause] })).sort((a, b) => b.deaths - a.deaths)
+		});
+		left -= deaths;
+	}
+	return { reached, untouched, deaths: d.deaths, survivors: Math.max(0, reached - d.deaths), injuries: d.injuries, stations };
 }
 
 export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMeta): DebriefData {
@@ -520,6 +587,33 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 		} else if (psi > 1) ota.injured += pop * 0.25;
 	}
 
+	// Injured survivors, cell by cell, so nobody is counted both hurt and dead. Blast shares are OTA's, above.
+	const inBurns = new Uint8Array(n);
+	for (const r of reports) {
+		if (r.rings.thermal <= 0) continue;
+		for (let i = 0; i < n; i++) {
+			if (Math.abs(grid.lat[i] - r.burst.lat) * 111.2 > r.rings.thermal) continue;
+			if (distanceKm(grid.lat[i], grid.lon[i], r.burst.lat, r.burst.lon) <= r.rings.thermal) inBurns[i] = 1;
+		}
+	}
+	const injuries: Injuries = { blast: 0, burns: 0, sickness: 0, total: 0 };
+	let harmedPop = 0;
+	for (let i = 0; i < n; i++) {
+		const pop = grid.pop[i];
+		const psi = peak[i];
+		const alive = pop * (1 - cellFatal[i]);
+		const share = psi > 12 ? 0.02 : psi > 5 ? 0.4 : psi > 2 ? 0.45 : psi > 1 ? 0.25 : 0;
+		const blast = Math.min(alive, pop * share);
+		// The same share the game kills inside the burn radius, as a matching share burned and alive.
+		const burns = inBurns[i] ? (alive - blast) * BURN_INJURY : 0;
+		const sickness = dose[i] >= SICKNESS_RAD ? alive - blast - burns : 0;
+		injuries.blast += blast;
+		injuries.burns += burns;
+		injuries.sickness += sickness;
+		if (cellFatal[i] > 0 || blast + burns + sickness > 0) harmedPop += pop;
+	}
+	injuries.total = injuries.blast + injuries.burns + injuries.sickness;
+
 	// The worked example is the cell that lost the most people while some of them lived, so every
 	// term still means something. A cell where everybody died only shows a row of ones.
 	let worst = -1;
@@ -573,6 +667,8 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 	return {
 		bursts: reports,
 		ota,
+		injuries,
+		harmedPop,
 		causes: totals,
 		deaths: outcome.tally.fatalities,
 		structures: outcome.tally.structures,

@@ -1276,6 +1276,7 @@
 		font-size: 18px;
 		font-weight: 700;
 	}
+
 	.board li {
 		display: flex;
 		justify-content: space-between;

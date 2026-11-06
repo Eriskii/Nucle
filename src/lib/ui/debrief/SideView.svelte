@@ -619,44 +619,42 @@
 		gap: 10px;
 		font: 13px var(--d-mono);
 	}
+	/* A printed rule to slide a paper marker along. */
 	.scrub input {
 		appearance: none;
 		width: 100%;
 		height: 38px;
 		margin: 0;
-		background: none;
+		background: repeating-linear-gradient(90deg, var(--d-dim) 0 1px, transparent 1px 5%) 0 50% / 100% 11px no-repeat;
 		cursor: grab;
 	}
 	.scrub input::-webkit-slider-runnable-track {
-		height: 12px;
-		border-radius: 3px;
-		background: var(--d-rule);
-		box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
+		height: 2px;
+		background: var(--d-fg);
 	}
 	.scrub input::-moz-range-track {
-		height: 12px;
-		border-radius: 3px;
-		background: var(--d-rule);
-		box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
+		height: 2px;
+		background: var(--d-fg);
 	}
 	.scrub input::-webkit-slider-thumb {
 		appearance: none;
-		width: 24px;
-		height: 32px;
-		margin-top: -10px;
-		border: 1px solid var(--d-fg);
-		border-radius: 3px;
-		background: linear-gradient(90deg, transparent 44%, var(--d-accent) 44% 56%, transparent 56%), linear-gradient(180deg, var(--d-key), var(--d-rule));
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 0 var(--d-dim), 0 4px 5px rgba(0, 0, 0, 0.5);
+		width: 18px;
+		height: 30px;
+		margin-top: -14px;
+		border: 0;
+		background: linear-gradient(90deg, transparent 44%, var(--d-accent) 44% 56%, transparent 56%), var(--d-key);
+		clip-path: polygon(0 0, 100% 0, 100% 72%, 50% 100%, 0 72%);
+		box-shadow: inset 0 0 0 1px var(--d-fg);
+		filter: drop-shadow(1px 2px 1px rgba(40, 30, 15, 0.5));
 	}
 	.scrub input::-moz-range-thumb {
 		box-sizing: border-box;
-		width: 24px;
-		height: 32px;
+		width: 18px;
+		height: 30px;
 		border: 1px solid var(--d-fg);
-		border-radius: 3px;
-		background: linear-gradient(90deg, transparent 44%, var(--d-accent) 44% 56%, transparent 56%), linear-gradient(180deg, var(--d-key), var(--d-rule));
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 3px 0 var(--d-dim), 0 4px 5px rgba(0, 0, 0, 0.5);
+		border-radius: 0;
+		background: linear-gradient(90deg, transparent 44%, var(--d-accent) 44% 56%, transparent 56%), var(--d-key);
+		clip-path: polygon(0 0, 100% 0, 100% 72%, 50% 100%, 0 72%);
 	}
 	.scrub output {
 		font-weight: 700;

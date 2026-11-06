@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import type { TheatreMeta } from '#lib/game/data.ts';
-	import { analyze, CAUSES, placeLimitKm, type Cause } from '#lib/game/debrief.ts';
+	import { analyze, CAUSES, marchOf, placeLimitKm, type Cause } from '#lib/game/debrief.ts';
 	import type { Difficulty } from '#lib/game/difficulty.ts';
 	import { fatalityFromFallout, fatalityFromPsi, structureLossFromPsi } from '#lib/game/effects.ts';
 	import { DIFFICULTY_RU, THEATRE_RU, WEAPON_NAME_RU, placeName as localPlace, type Lang } from '#lib/game/i18n.ts';
@@ -21,6 +21,7 @@
 	import BurstPanel from './BurstPanel.svelte';
 	import { formatter } from './fmt.ts';
 	import LogStrip from './LogStrip.svelte';
+	import March from './March.svelte';
 	import Plot from './Plot.svelte';
 	import SplitBar from './SplitBar.svelte';
 	import StrikeMap from './StrikeMap.svelte';
@@ -121,6 +122,13 @@
 			: []
 	);
 
+	const marchPlaces = $derived(
+		d.places
+			.filter((p) => p.kind === 'city' && p.deaths >= 1)
+			.sort((a, b) => b.deaths - a.deaths)
+			.map((p) => ({ name: placeName(p), deaths: p.deaths }))
+	);
+
 	const H = $derived(t.how);
 	const sweep = (lo: number, hi: number, fn: (x: number) => number, log = false, n = 80): [number, number][] =>
 		Array.from({ length: n + 1 }, (_, i) => {
@@ -146,7 +154,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="debrief" data-theme={theme.id} bind:this={root} role="dialog" aria-modal="true" aria-label={t.title}>
+<div class="debrief" data-theme={theme.id} style:--page-word={`'${t.sheet.page}'`} bind:this={root} role="dialog" aria-modal="true" aria-label={t.title}>
 	<header class="top">
 		<strong>{t.title}</strong>
 		<nav>
@@ -158,6 +166,12 @@
 	</header>
 
 	<div class="page">
+		<div class="masthead">
+			<b>{t.sheet.org[theme.id]}</b>
+			<p>{t.sheet.form[theme.id]}</p>
+			<p>{t.sheet.exercise} {String(scenario.day).padStart(3, '0')} · {scenario.date} · {theatreName}</p>
+			<span class="stamp">{t.sheet.stamp[theme.id]}</span>
+		</div>
 		<p class="note">{t.modelNote}</p>
 
 		<section id="d-summary">
@@ -168,6 +182,7 @@
 			</p>
 			<div class="tiles">
 				<div class="hero"><b>{F.count(d.deaths)}</b><span>{t.summary.tiles.deaths}</span></div>
+				{#if d.injuries.total >= 1}<div><b>{F.count(d.injuries.total)}</b><span>{t.summary.tiles.injured}</span></div>{/if}
 				<div><b>{F.count(d.mapPop)}</b><span>{t.summary.tiles.mapPop}</span></div>
 				<div><b>{F.count(d.structures)}</b><span>{t.summary.tiles.structures}</span></div>
 				<div><b>{F.kt(d.yieldKt)}</b><span>{t.summary.tiles.yield} · {F.pct(d.fissionKt / Math.max(d.yieldKt, 1e-6))} {t.summary.tiles.fission}</span></div>
@@ -176,6 +191,11 @@
 			</div>
 
 			{#if anyDead}
+				<h3>{t.march.head}</h3>
+				<p>{t.march.body}</p>
+				<March march={marchOf(d)} places={marchPlaces} day={scenario.day} map={theatreName} {F} labels={t.march} />
+				<p class="small">{t.march.note}</p>
+
 				<h3>{t.summary.causesHead}</h3>
 				<p>{t.summary.causesBody}</p>
 				<SplitBar segments={causeSegments} fmtShare={F.pct} desc={t.summary.causesHead} />
@@ -450,87 +470,22 @@
 
 <style>
 	.debrief {
-		/* SAGE: a phosphor display, the room's own colour. */
-		--d-bg: #0d0c06;
-		--d-surface: #14120a;
-		--d-fg: #f1e8b8;
-		--d-soft: #cfc592;
-		--d-dim: #a59c68;
-		--d-rule: rgba(243, 229, 138, 0.2);
-		--d-accent: #ff7a4a;
+		/* SAGE: line printer output on green-bar fanfold, on the desk beside the console. */
+		--desk: radial-gradient(ellipse 90% 70% at 50% 25%, #2b3238, #151a1e 75%);
+		--d-bg: #f1f0e4;
+		--d-surface: #f8f7ee;
+		--d-fg: #1f2420;
+		--d-soft: #3f463f;
+		--d-dim: #626b60;
+		--d-rule: rgba(40, 70, 50, 0.26);
+		--d-accent: #a32d1b;
 		--d-mono: 'Overpass Mono', ui-monospace, monospace;
 		--d-head: 'Routed Gothic', 'Overpass Mono', sans-serif;
-		--d-key: #25220f;
-		--c-blast: #a579d4;
-		--c-burns: #de6a14;
-		--c-radiation: #3a96d0;
-		--c-fallout: #78a028;
-		--seq0: #3a341a;
-		--seq1: #6e5c1e;
-		--seq2: #b48a2a;
-		--seq3: #efb440;
-		--seq4: #fff0c4;
-		--sky-top: #070b14;
-		--sky-low: #18222f;
-		--land: #1d190e;
-		--fire-core: #fffde8;
-		--fire-mid: #ffc24a;
-		--fire-edge: rgba(255, 90, 30, 0.2);
-		--cloud-hi: #cdbda4;
-		--cloud-lo: #705c4a;
-		--dust: #4a3a2c;
-		--shock: #eaf4ff;
-		--flash: #fff8e0;
-		--map-bg: #0c0b05;
-		position: fixed;
-		inset: 0;
-		z-index: 20;
-		overflow-y: auto;
-		overscroll-behavior: contain;
-		background: var(--d-bg);
-		color: var(--d-fg);
-		font: 15px/1.6 var(--d-mono);
-	}
-	/* PVO: a green display and Soviet draughting type. */
-	.debrief[data-theme='pvo'] {
-		--d-bg: #070d07;
-		--d-surface: #0b140b;
-		--d-fg: #d9f0bc;
-		--d-soft: #b7d29a;
-		--d-dim: #8fac78;
-		--d-rule: rgba(166, 232, 108, 0.22);
-		--d-accent: #ff8a2a;
-		--d-mono: 'PT Mono', ui-monospace, monospace;
-		--d-head: 'Open GOST Type B', 'PT Mono', sans-serif;
-		--d-key: #142212;
-		--c-burns: #de7014;
-		--c-fallout: #9c9a20;
-		--seq0: #1c2c18;
-		--seq1: #3f6230;
-		--seq2: #7da848;
-		--seq3: #c4dc62;
-		--seq4: #f2ffc4;
-		--sky-top: #050d08;
-		--sky-low: #122218;
-		--land: #10170b;
-		--cloud-hi: #bcc2a0;
-		--cloud-lo: #5f6a4a;
-		--dust: #3c422c;
-		--shock: #e6ffd0;
-		--map-bg: #07100a;
-	}
-	/* Chart: a typed report on the planner's table, with a hand-lettered title. */
-	.debrief[data-theme='paper'] {
-		--d-bg: #e6dcc0;
-		--d-surface: #f1e9d3;
-		--d-fg: #2b261c;
-		--d-soft: #463e2f;
-		--d-dim: #6b604a;
-		--d-rule: rgba(90, 70, 40, 0.28);
-		--d-accent: #a01d16;
-		--d-mono: 'Courier Prime', 'Courier New', monospace;
-		--d-head: 'Architects Daughter', cursive;
-		--d-key: #f3ecd8;
+		--d-key: #e6e8d8;
+		--bars: repeating-linear-gradient(180deg, rgba(80, 150, 100, 0.13) 0 72px, transparent 72px 144px);
+		--edge: radial-gradient(circle 6px at 50% 12px, #151a1e 96%, rgba(0, 0, 0, 0.3) 100%, transparent 112%) 0 0 / 100% 24px repeat-y;
+		--edge-size: 26px;
+		--stamp: #a32d1b;
 		--c-blast: #7a4aa0;
 		--c-burns: #c8551a;
 		--c-radiation: #1f6ea8;
@@ -552,7 +507,95 @@
 		--shock: #a01d16;
 		--flash: #ffffff;
 		--map-bg: #efe6cf;
+		--march-live: #e3bd92;
+		--march-dead: #17130f;
+		--march-wound: #8e1a12;
+		--march-doomed: #4f120d;
+		--march-hurt: #b4632a;
+		--march-halo: rgba(248, 247, 238, 0.8);
+		--march-ink: #1d1a14;
+		--march-soft: #5c5444;
+		--march-rule: rgba(60, 50, 30, 0.22);
+		position: fixed;
+		inset: 0;
+		z-index: 20;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		background: var(--desk);
+		color: var(--d-fg);
+		font: 15px/1.6 var(--d-mono);
 	}
+	/* PVO: a wide-carriage listing on thin grey stock, stamped in violet. */
+	.debrief[data-theme='pvo'] {
+		--desk: radial-gradient(ellipse 90% 70% at 50% 25%, #2a3a32, #101813 75%);
+		--d-bg: #e9e6d6;
+		--d-surface: #f1eee0;
+		--d-fg: #23261f;
+		--d-soft: #43473c;
+		--d-dim: #656a5a;
+		--d-rule: rgba(60, 65, 45, 0.28);
+		--d-accent: #5a2c8c;
+		--d-mono: 'PT Mono', ui-monospace, monospace;
+		--d-head: 'Open GOST Type B', 'PT Mono', sans-serif;
+		--d-key: #dedbc9;
+		--bars: repeating-linear-gradient(180deg, transparent 0 23px, rgba(60, 65, 45, 0.07) 23px 24px);
+		--edge: radial-gradient(circle 6px at 50% 12px, #101813 96%, rgba(0, 0, 0, 0.3) 100%, transparent 112%) 0 0 / 100% 24px repeat-y;
+		--stamp: #5a2c8c;
+	}
+	/* Chart: a typed carbon on onionskin, clipped to the planner's table. */
+	.debrief[data-theme='paper'] {
+		--desk: linear-gradient(115deg, #2c3a30, #1f2a23 60%, #161e19);
+		--d-bg: #ece3ca;
+		--d-surface: #f3ecd8;
+		--d-fg: #2b261c;
+		--d-soft: #463e2f;
+		--d-dim: #6b604a;
+		--d-rule: rgba(90, 70, 40, 0.28);
+		--d-accent: #a01d16;
+		--d-mono: 'Courier Prime', 'Courier New', monospace;
+		--d-head: 'Architects Daughter', cursive;
+		--d-key: #f3ecd8;
+		--bars: none;
+		--edge: radial-gradient(circle 9px at 50% 50%, rgba(22, 30, 25, 0.9) 98%, transparent) 50% 90px / 100% 280px repeat-y;
+		--edge-size: 22px;
+		--stamp: #a01d16;
+	}
+	/* The live burst scene is a photographic print, so it keeps a dark photograph's own colours. */
+	.debrief[data-theme='sage'] :global(.stagebox),
+	.debrief[data-theme='pvo'] :global(.stagebox) {
+		--d-fg: #f1e8b8;
+		--d-soft: #cfc592;
+		--d-dim: #a59c68;
+		--d-rule: rgba(243, 229, 138, 0.2);
+		--d-surface: #14120a;
+		--sky-top: #070b14;
+		--sky-low: #18222f;
+		--land: #1d190e;
+		--fire-core: #fffde8;
+		--fire-mid: #ffc24a;
+		--fire-edge: rgba(255, 90, 30, 0.2);
+		--cloud-hi: #cdbda4;
+		--cloud-lo: #705c4a;
+		--dust: #4a3a2c;
+		--shock: #eaf4ff;
+		--flash: #fff8e0;
+		--map-bg: #0c0b05;
+	}
+	.debrief[data-theme='sage'] :global(.map .frame) {
+		--map-bg: #0c0b05;
+	}
+	.debrief[data-theme='pvo'] :global(.map .frame) {
+		--map-bg: #07100a;
+	}
+	.debrief :global(.stagebox),
+	.debrief :global(.wv),
+	.debrief :global(.map .frame) {
+		outline: 7px solid #f7f5ec;
+		outline-offset: 0;
+		box-shadow: 0 0 0 8px rgba(40, 35, 25, 0.25), 0 6px 14px 8px rgba(40, 35, 25, 0.28);
+		margin-block: 12px;
+	}
+	/* A routing slip clipped across the top of the printout. */
 	.top {
 		position: sticky;
 		top: 0;
@@ -561,9 +604,12 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 6px 18px;
-		padding: 8px 16px;
-		background: var(--d-surface);
-		border-bottom: 1px solid var(--d-dim);
+		max-width: 1020px;
+		margin: 0 auto;
+		padding: 8px 16px 10px;
+		background: var(--d-key);
+		box-shadow: 0 3px 7px rgba(0, 0, 0, 0.45);
+		border-bottom: 2px dashed var(--d-dim);
 	}
 	.top strong {
 		font: 700 21px var(--d-head);
@@ -583,6 +629,7 @@
 		background: none;
 		color: var(--d-fg);
 		font: 13.5px var(--d-mono);
+		text-transform: uppercase;
 		text-decoration: underline;
 		text-decoration-color: var(--d-dim);
 		text-underline-offset: 3px;
@@ -594,44 +641,129 @@
 	.top nav::-webkit-scrollbar {
 		display: none;
 	}
+	/* The paper itself, with tractor holes down both edges and a tear line between pages. */
 	.page {
+		position: relative;
+		box-sizing: border-box;
 		max-width: 1080px;
-		margin: 0 auto;
-		padding: 18px 16px 60px;
+		margin: 0 auto 40px;
+		padding: 24px calc(var(--edge-size) + 30px) 60px;
+		counter-reset: sheet;
+		background:
+			linear-gradient(90deg, rgba(0, 0, 0, 0.1), transparent 9px calc(100% - 9px), rgba(0, 0, 0, 0.1)),
+			var(--bars),
+			var(--d-bg);
+		box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+		animation: feed 900ms steps(30) both;
+	}
+	.page::before,
+	.page::after {
+		content: '';
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: var(--edge-size);
+		background: var(--edge);
+		pointer-events: none;
+	}
+	.page::before {
+		left: 0;
+		border-right: 1px dashed var(--d-rule);
+	}
+	.page::after {
+		right: 0;
+		border-left: 1px dashed var(--d-rule);
+	}
+	:global([data-theme='paper']).debrief .page::after {
+		display: none;
+	}
+	@keyframes feed {
+		from {
+			transform: translateY(-70vh);
+		}
 	}
 	.page > section {
-		padding-top: 34px;
-		scroll-margin-top: 44px;
+		position: relative;
+		margin-top: 30px;
+		padding-top: 42px;
+		scroll-margin-top: 54px;
+		border-top: 2px dashed var(--d-dim);
+		counter-increment: sheet;
+	}
+	.page > section::before {
+		content: var(--page-word) ' ' counter(sheet, decimal-leading-zero);
+		position: absolute;
+		top: 12px;
+		right: 0;
+		font-size: 12px;
+		letter-spacing: 0.08em;
+		color: var(--d-soft);
+	}
+	.masthead {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		align-items: start;
+		gap: 2px 18px;
+		font-size: 13px;
+		line-height: 1.5;
+		text-transform: uppercase;
+	}
+	.masthead b {
+		font-size: 15px;
+		letter-spacing: 0.06em;
+	}
+	.masthead p {
+		grid-column: 1;
+		margin: 0;
+	}
+	.stamp {
+		grid-row: 1 / span 3;
+		grid-column: 2;
+		padding: 5px 11px;
+		border: 3px double var(--stamp);
+		border-radius: 3px;
+		font: 700 15px var(--d-head);
+		letter-spacing: 0.1em;
+		white-space: nowrap;
+		color: var(--stamp);
+		opacity: 0.8;
+		transform: rotate(-3deg);
+	}
+	:global([data-theme='sage']).debrief .masthead,
+	:global([data-theme='pvo']).debrief .masthead {
+		letter-spacing: 0.02em;
 	}
 	.debrief :global(.dkey) {
 		appearance: none;
-		min-height: 38px;
+		min-height: 36px;
 		margin-bottom: 4px;
-		padding: 6px 13px;
-		border: 1px solid var(--d-dim);
-		border-radius: 3px;
-		background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(0, 0, 0, 0.14)), var(--d-key);
+		padding: 6px 15px 6px 17px;
+		border: 0;
+		background: linear-gradient(135deg, transparent 6px, var(--d-dim) 6px 7.2px, transparent 7.2px), var(--d-key);
 		color: var(--d-fg);
 		font: 13px var(--d-mono);
 		cursor: pointer;
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -2px 0 rgba(0, 0, 0, 0.2), 0 3px 0 var(--d-dim), 0 5px 5px rgba(0, 0, 0, 0.3);
+		/* A card with one corner cut, like a punched card or a file tab. */
+		clip-path: polygon(10px 0, 100% 0, 100% 100%, 0 100%, 0 10px);
+		box-shadow: inset 0 0 0 1px var(--d-dim);
+		filter: drop-shadow(1px 2px 1px rgba(40, 30, 15, 0.45));
 	}
 	.debrief :global(.dkey:hover:not(:disabled)) {
-		border-color: var(--d-fg);
+		box-shadow: inset 0 0 0 1.5px var(--d-fg);
 	}
 	.debrief :global(.dkey:active:not(:disabled)) {
-		transform: translateY(3px);
-		box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45);
+		transform: translate(1px, 2px);
+		filter: none;
 	}
 	.debrief :global(.dkey:disabled) {
 		opacity: 0.4;
 		cursor: not-allowed;
 	}
+	/* Chosen: marked on the card by hand. */
 	.debrief :global(.dkey.on) {
-		background: var(--d-accent);
-		border-color: var(--d-accent);
-		color: var(--d-bg);
+		color: var(--d-accent);
 		font-weight: 700;
+		box-shadow: inset 0 0 0 2.5px var(--d-accent);
 	}
 	.debrief :global(h2) {
 		margin: 0 0 10px;
@@ -655,6 +787,11 @@
 	}
 	.debrief :global(a) {
 		color: inherit;
+	}
+	.debrief :global(figure),
+	.tiles div,
+	.debrief :global(table.dt) {
+		background-color: var(--d-surface);
 	}
 	.debrief :global(table.dt) {
 		width: 100%;
@@ -940,6 +1077,11 @@
 		padding-left: 20px;
 		font-size: 13.5px;
 	}
+	@media (prefers-reduced-motion: reduce) {
+		.page {
+			animation: none;
+		}
+	}
 	.end {
 		margin-top: 30px;
 		text-align: center;
@@ -967,6 +1109,18 @@
 		}
 		.page > section {
 			scroll-margin-top: 76px;
+		}
+		.page {
+			padding-inline: calc(var(--edge-size) + 8px);
+		}
+		.top {
+			margin: 0;
+		}
+		.stamp {
+			grid-column: 1;
+			grid-row: auto;
+			justify-self: start;
+			font-size: 13px;
 		}
 		.debrief :global(h2) {
 			font-size: 24px;

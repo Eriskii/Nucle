@@ -10,6 +10,34 @@ export const EN = {
 	modelNote:
 		'This is a game model built from open literature, not a prediction. Everything below is calculated from your plan by the same code that scored it. Where something comes from an estimate rather than a published figure, it says so.',
 
+	sheet: {
+		org: { sage: 'AN/FSQ-7 DIRECTION CENTRAL', pvo: 'VOZDUKH-1 AIR DEFENCE SYSTEM', paper: 'TARGET PLANNING STAFF' },
+		form: { sage: 'LINE PRINTER OUTPUT. STRIKE EVALUATION', pvo: 'PRINTER LISTING. STRIKE EVALUATION', paper: 'POST-STRIKE WORKSHEET. CARBON COPY 2 OF 3' },
+		stamp: { sage: 'EXERCISE ONLY', pvo: 'EXERCISE ONLY', paper: 'SECRET · EXERCISE ONLY' },
+		exercise: 'EXERCISE',
+		page: 'PAGE'
+	},
+	march: {
+		injured: 'Injured',
+		injuredRead: (total: string, blast: string, burns: string, sickness: string) => `Injured: ${total} survivors, an estimate. Blast ${blast} (OTA's shares by pressure), burns ${burns}, radiation sickness ${sickness}.`,
+		key: { living: 'People in reach', hurt: 'Will be injured (estimate)', doomed: 'Will die', figure: 'Each figure' },
+		head: 'The march',
+		body: "This is drawn after Charles Minard's 1869 map of Napoleon's army in Russia, where the band's width is the army and its shrinking is the dead. Here the pale band is everyone your plan could reach, moving left to right through the hazards in the order they arrive. The dark vein along its underside is the people who will die, there from the first moment. At each hazard its share tears away, frays into one strand per warhead, and walks down into the rows of its dead. Places along the top are the worst hit, with their dead.",
+		title: (map: string) => `Figurative map of the successive losses in people, ${map}`,
+		legend: (perMm: string, perFigure: string) => `The width of each band shows the number of people, at about ${perMm} to the millimetre. Very thin wounds are drawn wider so they stay visible. Each figure below is ${perFigure}.`,
+		reached: 'In reach',
+		survive: 'Unhurt',
+		untouched: (n: string) => `Another ${n} people on this map were out of reach.`,
+		dead: 'dead',
+		causes: { radiation: 'Radiation', burns: 'Burns', blast: 'Blast', fallout: 'Fallout' },
+		table: 'Graphic table of the dead, by arrival of each hazard. Not to scale.',
+		when: (cause: string, s: number | null) => (s === null ? 'hours later' : cause === 'radiation' || s < 1 ? 'first second' : s < 60 ? `by ${Math.round(s)} s` : `by ${Math.round(s / 60)} min`),
+		replay: 'Run again',
+		readout: (cause: string, deaths: string, share: string, weapons: string) => `${cause}: ${deaths} dead, ${share} of the total. By warhead, ${weapons}.`,
+		hint: 'Point at a pile to break it down by warhead.',
+		desc: (deaths: string, injured: string) => `Flow map after Minard: people in reach narrowing through radiation, burns, blast and fallout, with ${deaths} dead piled by cause and ${injured} injured`,
+		note: 'Times are when each hazard arrives, not when people die. Death from burns, radiation and fallout can take days or weeks. Injuries are an estimate that the score does not use: injured shares by blast pressure from OTA 1979, a quarter of the remaining survivors inside the burn radius, and everyone left with a fallout dose of 100 rad or more. Nobody is counted twice.'
+	},
 	summary: {
 		head: 'The strike in one page',
 		lead: (count: number, yieldText: string, hiroshimas: string, map: string) =>
@@ -17,6 +45,7 @@ export const EN = {
 		leadDead: (deaths: string, share: string) => `The model counts ${deaths} people dead, ${share} of everyone on this map.`,
 		leadNone: 'The model counts nobody dead. All of your bursts stayed above the atmosphere, where only the electromagnetic pulse reaches the ground.',
 		tiles: {
+			injured: 'Injured survivors (estimate)',
 			deaths: 'Dead',
 			structures: 'Structures destroyed',
 			mapPop: 'People on this map',

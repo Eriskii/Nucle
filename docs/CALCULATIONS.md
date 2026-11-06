@@ -97,6 +97,16 @@ Each burst lays a continuous dose-rate field (Miller's scaling system) along the
 
 Applies only at or above 30 km. The footprint is the horizon arc from the burst height, times a yield factor from 0.35 to 1 (estimate). Anyone inside counts as blacked out, and nobody dies from it.
 
+## Injuries
+
+Report only, and never part of the score. Each cell's survivors are split once, in this order:
+
+| Cause | Rule | Source |
+|---|---|---|
+| Blast | 2% of the population above 12 psi, 40% at 5 to 12, 45% at 2 to 5, 25% at 1 to 2, capped at the survivors | OTA 1979 |
+| Burns | 25% of the remaining survivors inside any third-degree radius | **Estimate**, matches the burn fatality share |
+| Radiation sickness | All remaining survivors with a summed fallout dose of 100 rad or more | **Estimate**, threshold from G&D |
+
 ## Combining all the bursts
 
 `Sim.tally` merges bursts per cell:
