@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import type { TheatreMeta } from '#lib/game/data.ts';
-	import { falloutBands, ringsFor, empKm, type PlumeBand } from '#lib/game/effects.ts';
+	import { falloutBands, falloutField, ringsFor, empKm, type PlumeBand } from '#lib/game/effects.ts';
 	import { fmtPressure, fmtWind, placeName, UI, type Lang } from '#lib/game/i18n.ts';
 	import { destination, Projection } from '#lib/game/projection.ts';
-	import { toBurst, type Placement, type Scenario, type Zone } from '#lib/game/scenario.ts';
+	import { toBurst, weatherFor, type Placement, type Scenario, type Zone } from '#lib/game/scenario.ts';
 	import type { PopGrid } from '#lib/game/sim.ts';
 	import type { TheatreKind } from '#lib/game/theatres.ts';
 	import Instruments from './Instruments.svelte';
+	import type { LocalWeather } from '#lib/game/weatherfield.ts';
 	import type { Theme } from './themes.ts';
 	import { BUILDING_TILE_Z, MAX_TILE_Z, MIN_TILE_Z, tileBudget, TileStore, tileZoomFor, type TileLayer } from './tiles.ts';
 
@@ -595,14 +596,16 @@
 		ctx.closePath();
 	}
 
-	function plumePath(ctx: CanvasRenderingContext2D, lat: number, lon: number, band: PlumeBand, reach = 1) {
-		const bearing = scenario.weather.windBearing;
+	function plumePath(ctx: CanvasRenderingContext2D, lat: number, lon: number, band: PlumeBand, reach = 1, lengthKm = 0) {
+		const bearing = weatherFor(scenario, lat, lon).windBearing;
 		const spread = Math.min(1, reach * 1.4);
+		// With real weather it follows the winds it meets. Reach grows it along that line as the strike plays.
+		const track = scenario.field && lengthKm > 0 ? scenario.field.track(lat, lon, lengthKm) : null;
 		const plot = (along: number, cross: number, first: boolean) => {
 			const a = along * reach;
 			const c = cross * spread;
 			const az = bearing + (Math.atan2(c, a) * 180) / Math.PI;
-			const [la, lo] = destination(lat, lon, az, Math.hypot(a, c));
+			const [la, lo] = track ? track.point(a, -c) : destination(lat, lon, az, Math.hypot(a, c));
 			const [x, y] = toScreen(la, lo);
 			if (first) ctx.moveTo(x, y);
 			else ctx.lineTo(x, y);
@@ -717,19 +720,21 @@
 		const b = toBurst(scenario, p);
 		const isSelected = p.slot === selected;
 		const [x, y] = toScreen(b.lat, b.lon);
-		const rings = ringsFor(b.weapon, b.kt, b.hobM, scenario.weather);
+		const local = weatherFor(scenario, b.lat, b.lon);
+		const rings = ringsFor(b.weapon, b.kt, b.hobM, local);
 
 		const paper = !theme.emissive;
 		if (showFallout) {
-			const bands = falloutBands(b.weapon, b.kt, b.hobM, scenario.weather);
+			const bands = falloutBands(b.weapon, b.kt, b.hobM, local);
+			const plumeKm = falloutField(b.weapon, b.kt, b.hobM, local)?.downKm ?? 0;
 			// The map is dimmed under the widest contour, so streets can't compete with what's on top of them.
 			if (bands.length) {
-				plumePath(ctx, b.lat, b.lon, bands[bands.length - 1], grow);
+				plumePath(ctx, b.lat, b.lon, bands[bands.length - 1], grow, plumeKm);
 				ctx.fillStyle = `rgba(${theme.veil}, ${paper ? 0.6 : 0.68})`;
 				ctx.fill();
 			}
 			for (let i = bands.length - 1; i >= 0; i--) {
-				plumePath(ctx, b.lat, b.lon, bands[i], grow);
+				plumePath(ctx, b.lat, b.lon, bands[i], grow, plumeKm);
 				if (paper) {
 					// Hatched by hand, with the hottest contour hatched closest.
 					if (i <= 1) {
@@ -841,6 +846,32 @@
 		ctx.fillStyle = mark;
 		ctx.font = fontOf(Math.max(10, size / 62));
 		ctx.fillText(`${String(p.slot + 1).padStart(2, '0')}`, x + s + 3, y - s + 2);
+	}
+
+	/** The weather stations: where the wind is blowing and how damp the air is, across the map. */
+	function drawStations(ctx: CanvasRenderingContext2D) {
+		if (!scenario.field) return;
+		ctx.font = fontOf(Math.max(9.5, size / 70));
+		ctx.textAlign = 'left';
+		for (const st of scenario.field.stations) {
+			const [x, y] = toScreen(st.lat, st.lon);
+			if (x < 0 || y < 0 || x > size || y > size) continue;
+			const len = 5 + Math.min(16, Math.hypot(st.u, st.v) / 5);
+			const a = Math.atan2(st.u, st.v);
+			const dx = Math.sin(a) * len;
+			const dy = -Math.cos(a) * len;
+			ctx.strokeStyle = theme.dim;
+			ctx.lineWidth = 1.2;
+			ctx.beginPath();
+			ctx.moveTo(x, y);
+			ctx.lineTo(x + dx, y + dy);
+			ctx.moveTo(x + dx, y + dy);
+			ctx.lineTo(x + dx - Math.sin(a - 0.5) * 5, y + dy + Math.cos(a - 0.5) * 5);
+			ctx.moveTo(x + dx, y + dy);
+			ctx.lineTo(x + dx - Math.sin(a + 0.5) * 5, y + dy + Math.cos(a + 0.5) * 5);
+			ctx.stroke();
+			outlined(ctx, `${Math.round(st.humidity * 100)}%`, x + 4, y + 11, theme.gridText);
+		}
 	}
 
 	function drawWind(ctx: CanvasRenderingContext2D) {
@@ -1055,6 +1086,7 @@
 		}
 
 		ctx.globalAlpha = theme.motion === 'refresh' ? 0.86 + 0.14 * rewrite : 1;
+		if (showFallout) drawStations(ctx);
 		if (playing) {
 			drawPlayback(ctx, now);
 		} else {
@@ -1290,6 +1322,18 @@
 		{ label: 'South', glyph: '▼', dx: 0, dy: -1, area: 's' }
 	];
 
+	// The instruments read the weather at the selected warhead, or at the middle of the map before one is placed.
+	const here = $derived.by(() => {
+		const p = placements.find((q) => q.slot === selected);
+		return p ? weatherFor(scenario, p.lat, p.lon) : scenario.weather;
+	});
+	// Point anywhere to read the air there.
+	const airReadout = $derived.by(() => {
+		if (!scenario.field || !cursor) return '';
+		const w = scenario.field.at(cursor.lat, cursor.lon);
+		return ` · ${Math.round(w.humidity * 100)}% · ${w.tempC}°C · ${String(w.windBearing).padStart(3, '0')}° ${fmtWind(w.windKmh, lang)}`;
+	});
+
 	const readout = $derived.by(() => {
 		if (!cursor) return theme.id === 'paper' ? 'PLOTTING SHEET' : L.standby;
 		const ns = cursor.lat >= 0 ? (lang === 'ru' ? 'С' : 'N') : lang === 'ru' ? 'Ю' : 'S';
@@ -1322,8 +1366,9 @@
 		<Instruments
 			{lang}
 			totalKt={placements.reduce((sum, p) => sum + p.kt, 0)}
-			windBearing={scenario.weather.windBearing}
-			windKmh={scenario.weather.windKmh}
+			windBearing={here.windBearing}
+			windKmh={here.windKmh}
+			humidity={scenario.field ? (here as LocalWeather).humidity : null}
 		/>
 		<div class="zooms">
 			<button
@@ -1367,7 +1412,7 @@
 	</div>
 </div>
 <div class="readout">
-	<span class="coords">{readout}</span>
+	<span class="coords">{readout}{airReadout}</span>
 	<output>{zoom >= 10 ? Math.round(zoom) : Math.round(zoom * 10) / 10}X</output>
 </div>
 

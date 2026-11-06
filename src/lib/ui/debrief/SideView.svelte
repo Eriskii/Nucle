@@ -5,6 +5,7 @@
 	import { peakWindMs, type Precip } from '#lib/game/effects.ts';
 	import { WEAPON_FACTS } from '#lib/game/weaponfacts.ts';
 	import { BlastEngine } from './blastEngine.ts';
+	import type { LocalWeather } from '#lib/game/weatherfield.ts';
 	import { HUMIDITY, moistureLiftKm, momentAt, riseOf, sceneFor, type Trail } from './blastState.ts';
 	import type { Fmt } from './fmt.ts';
 	import { Governor } from './gl.ts';
@@ -32,7 +33,11 @@
 		pastFront: string;
 		insideFire: string;
 		rising: (speed: string) => string;
-		humidity: (share: string, lift: string) => string;
+		humidity: (share: string) => string;
+		localAir: (date: string, share: string, temp: string) => string;
+		moistureLift: (lift: string) => string;
+		moistureNone: string;
+		weatherHead: string;
 		breached: string;
 		cloudTop: (km: string) => string;
 		refs: { everest: string; jet: string; stratopause: string };
@@ -96,14 +101,15 @@
 	const t = $derived(toT(u));
 	const before = $derived(u < PRE);
 	const now = $derived(flight.at(Math.min(t, 0)));
-	const m = $derived(momentAt(r, t, precip));
+	const m = $derived(momentAt(r, t));
+	const local = $derived(r.weather as Partial<LocalWeather>);
 
 	const H = $derived(width < 620 ? 460 : 560);
 	const RULERS = 104;
 	const groundY = $derived(H - RULERS);
 	const hobKm = $derived(r.burst.hobM / 1000);
-	const risen = $derived(riseOf(r, precip));
-	const moisture = $derived(moistureLiftKm(r, precip));
+	const risen = $derived(riseOf(r));
+	const moisture = $derived(moistureLiftKm(r));
 	const cloudTopKm = $derived(risen.topKm);
 	const reach = $derived(Math.max(r.rings.psi1, r.rings.thermal, r.rings.radiation, risen.at(900).r, r.fireballKm, 0.05) * 1.1);
 	const ppkBase = $derived(Math.min((width / 2 - 14) / reach, (groundY - 26) / Math.max(cloudTopKm * 1.08, hobKm * 1.1)));
@@ -457,6 +463,16 @@
 		{/if}
 	</div>
 
+	{#if local.date}
+		<div class="airbox">
+			<b>{text.weatherHead}</b>
+			<span>{local.date}</span>
+			<span>{Math.round((local.humidity ?? 0) * 100)}% RH</span>
+			<span>{local.tempC} °C</span>
+			<span>{r.weather.windBearing}° · {F.wind((r.weather.windKmh * 1000) / 3600)}</span>
+			<span>{r.weather.precip}</span>
+		</div>
+	{/if}
 	<div class="readout">
 		<button type="button" class="dkey" onclick={toggle}>{playing ? text.pause : text.play}</button>
 		<label class="scrub">
@@ -490,7 +506,8 @@
 	</p>
 	<p class="scale-note">
 		{text.scale}
-		{text.humidity(`${Math.round(HUMIDITY[precip] * 100)}%`, moisture >= 0.05 ? F.km(moisture) : '')}
+		{local.date ? text.localAir(local.date, `${Math.round((local.humidity ?? 0) * 100)}%`, `${local.tempC}`) : text.humidity(`${Math.round(HUMIDITY[precip] * 100)}%`)}
+		{moisture >= 0.05 ? text.moistureLift(F.km(moisture)) : text.moistureNone}
 		{#if before}{text.enlarged}{/if}
 		{#if before && delivery.illustrative}{text.illustrative}{/if}
 		{#if before && flight.raised}{text.raised}{/if}
@@ -622,6 +639,15 @@
 		font: 10px var(--d-mono);
 		color: #fff;
 		text-shadow: 0 0 3px #000;
+	}
+	.airbox {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 2px 14px;
+		margin-top: 12px;
+		padding: 5px 9px;
+		border: 1px dashed var(--d-dim);
+		font: 12.5px var(--d-mono);
 	}
 	.readout {
 		display: flex;

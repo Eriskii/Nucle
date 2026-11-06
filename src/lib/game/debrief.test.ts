@@ -7,17 +7,104 @@ import { DELIVERY, flightFor } from './delivery';
 import { dynamicPsi, peakWindMs, shockArrival, shockSpeedMs, thermalMaxS } from './effects';
 import { generate, theatreIdForDay } from './generator';
 import { evaluate } from './scenario';
+import { PlumeTrack } from './plumetrack';
+import { destination } from './projection';
+import { distanceKm } from './sim';
+import { WeatherField } from './weatherfield';
+
+const RAD = Math.PI / 180;
+import { weaponById } from './weapons';
 
 function load(id: string): TheatreData {
 	const meta = JSON.parse(readFileSync(`static/data/${id}.json`, 'utf8')) as TheatreMeta;
 	const raw = readFileSync(`static/data/${id}.bin`);
-	return { meta, grid: decodeGrid(meta, raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer) };
+	return { meta, grid: decodeGrid(meta, raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer), weather: JSON.parse(readFileSync(`static/data/weather-${id}.json`, 'utf8')) };
 }
 
 const near = (got: number, want: number, frac: number) => {
 	expect(got).toBeGreaterThan(want * (1 - frac));
 	expect(got).toBeLessThan(want * (1 + frac));
 };
+
+describe('real weather', () => {
+	const rows = [
+		[10, 0, 30, 90, 0, 10, 40, 270],
+		[10, 20, 0, 20, 0, 10, 40, 90],
+		[30, 0, 15, 50, 3, 90, 20, 0],
+		[30, 20, 15, 50, 71, 90, 20, 180]
+	];
+	it('blends to the station at a station, and between them elsewhere', () => {
+		const f = new WeatherField('1962-10-14', rows);
+		const a = f.at(10, 0);
+		expect(a.humidity).toBeCloseTo(0.9, 1);
+		expect(a.tempC).toBeCloseTo(30, -1);
+		// A wind from the west blows toward the east.
+		expect(a.windBearing).toBeGreaterThan(80);
+		expect(a.windBearing).toBeLessThan(100);
+		const mid = f.at(10, 10);
+		expect(mid.humidity).toBeGreaterThan(0.2);
+		expect(mid.humidity).toBeLessThan(0.9);
+		expect(f.at(30, 20).precip).toBe('SNOW');
+		expect(f.at(30, 0).precip).toBe('OVERCAST');
+	});
+	it('skips a station with missing data', () => {
+		expect(new WeatherField('1962-10-14', [[1, 1, null, 50, 0, 0, 10, 0], rows[0]]).stations.length).toBe(1);
+	});
+	it('leaves puzzles before real weather alone, and is repeatable after', () => {
+		expect(generate(2, load(theatreIdForDay(2))).scenario.field).toBeUndefined();
+		const a = generate(5, load(theatreIdForDay(5)));
+		const b = generate(5, load(theatreIdForDay(5)));
+		expect(a.scenario.field?.date).toMatch(/^19[5-9]\d-/);
+		expect(a.scenario.field?.date).toBe(b.scenario.field?.date);
+		expect(a.scenario.par).toBe(b.scenario.par);
+	});
+	it('bends a plume with the winds it meets, and agrees with itself', () => {
+		// Wind toward the east here, turning to the north further along.
+		const track = new PlumeTrack(40, -100, 600, (_, lon) => (lon < -97 ? 90 : 0));
+		const [tipLat, tipLon] = track.point(600, 0);
+		expect(tipLat).toBeGreaterThan(41);
+		expect(tipLon).toBeGreaterThan(-98);
+		// From a place to the line and back.
+		const toPlane = (lat: number, lon: number) => {
+			const p = (a: number, o: number) => [Math.cos(a * RAD) * Math.cos(o * RAD), Math.cos(a * RAD) * Math.sin(o * RAD), Math.sin(a * RAD)];
+			const [ax, ay, az] = p(lat, lon);
+			const [bx, by, bz] = p(40, -100);
+			const la = 40 * RAD;
+			const lo = -100 * RAD;
+			return [
+				((ax - bx) * -Math.sin(lo) + (ay - by) * Math.cos(lo)) * 6371,
+				((ax - bx) * -Math.sin(la) * Math.cos(lo) + (ay - by) * -Math.sin(la) * Math.sin(lo) + (az - bz) * Math.cos(la)) * 6371
+			];
+		};
+		for (const along of [100, 300, 500]) {
+			const [lat, lon] = track.point(along, 12);
+			const [e, n] = toPlane(lat, lon);
+			const [down, cross] = track.axes(e, n);
+			near(down, along, 0.08);
+			near(Math.abs(cross), 12, 0.25);
+		}
+		// Upwind of the burst measures as negative.
+		expect(track.axes(-50, 0)[0]).toBeLessThan(-40);
+	});
+
+	it('uses the bent line in the simulation on real weather days', () => {
+		const data = load('usa');
+		const f = new WeatherField('1969-04-01', data.weather!.days[0].rows);
+		const a = f.track(38, -100, 800);
+		const start = f.at(38, -100).windBearing;
+		const [lat, lon] = a.point(800, 0);
+		const straight = destination(38, -100, start, 800);
+		expect(distanceKm(lat, lon, straight[0], straight[1])).toBeGreaterThan(1);
+	});
+
+	it('sends each burst fallout along the wind at its own ground zero', () => {
+		const data = load('usa');
+		const f = new WeatherField('1962-10-14', data.weather!.days[0].rows);
+		const west = f.at(38, -115);
+		const east = f.at(38, -78);
+		expect(west.windBearing === east.windBearing && west.windKmh === east.windKmh && west.humidity === east.humidity).toBe(false);
+	});
+});
 
 describe('rising air and dust', () => {
 	const start = (kt: number) => thermalMaxS(kt) * 5;
@@ -63,10 +150,11 @@ describe('rising air and dust', () => {
 
 describe('post-strike report', () => {
 	it('counts heat deaths from a gigaton burst at 100 km', () => {
-		const data = load(theatreIdForDay(165));
-		const { scenario: locked, sim } = generate(165, data);
-		const scenario = { ...locked, hobLock: undefined };
-		const slot = scenario.arsenal.findIndex((w) => w.id === 'gnomon');
+		// A puzzle from before real weather, so the sky over the burst can't change this test.
+		const data = load(theatreIdForDay(2));
+		const { scenario: locked, sim } = generate(2, data);
+		const scenario = { ...locked, hobLock: undefined, arsenal: [weaponById('gnomon')] };
+		const slot = 0;
 		const big = data.grid.pop.indexOf(Math.max(...data.grid.pop));
 		const plan = [{ slot, lat: data.grid.lat[big], lon: data.grid.lon[big], kt: 1000000, hobM: 100000 }];
 		const d = analyze(scenario, sim, evaluate(scenario, sim, plan), data.meta);

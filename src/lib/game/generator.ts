@@ -18,6 +18,7 @@ import {
 } from './scenario';
 import { distanceKm, Sim, type Tally } from './sim';
 import { THEATRES, theatreById, type Theatre } from './theatres';
+import { WeatherField } from './weatherfield';
 import { WEAPONS, fissionFractionAt, hasDial, type Weapon } from './weapons';
 
 const MS_DAY = 86400000;
@@ -57,6 +58,16 @@ function rollWeather(rng: Rng): Weather {
 		windBearing: Math.round(between(rng, 0, 72)) * 5,
 		windKmh: Math.round(between(rng, 8, 90))
 	};
+}
+
+/** Real weather starts here, so earlier puzzles stay exactly as they were played. */
+export const REAL_WEATHER_FROM = 3;
+
+/** The historical date for this puzzle, in its own stream so nothing else about the day depends on it. */
+function fieldFor(day: number, data: TheatreData): WeatherField | undefined {
+	if (day < REAL_WEATHER_FROM || !data.weather) return undefined;
+	const found = pick(rngFor(day, 'weather-date'), data.weather.days);
+	return new WeatherField(found.date, found.rows);
 }
 
 function rollArsenal(rng: Rng, theatre: Theatre, kind: ObjectiveKind, day: number): Weapon[] {
@@ -332,11 +343,13 @@ function rollConditions(rng: Rng, s: Scenario, data: TheatreData, places: Place[
 function buildBase(day: number, attempt: number, theatre: Theatre, data: TheatreData): { s: Scenario; rng: Rng } {
 	const rng = rngFor(day, `scenario-${attempt}`);
 	const kind = kindForDay(day, theatre);
+	const field = fieldFor(day, data);
 	const s: Scenario = {
 		day,
 		date: dateOfDay(day),
 		theatre,
-		weather: rollWeather(rng),
+		weather: field ? field.at(theatre.lat, theatre.lon) : rollWeather(rng),
+		field,
 		arsenal: rollArsenal(rng, theatre, kind, day),
 		kind,
 		goal: 0,
@@ -372,7 +385,7 @@ function buildBase(day: number, attempt: number, theatre: Theatre, data: Theatre
 }
 
 const simFor = (s: Scenario, data: TheatreData) =>
-	new Sim(data.grid, s.weather, probesFor(s), s.targetZone);
+	new Sim(data.grid, s.weather, probesFor(s), s.targetZone, s.field);
 
 /** Set the goal and par by solving. Returns the sim and the solution, or null if unsolvable. */
 function calibrate(s: Scenario, data: TheatreData, rng: Rng): { sim: Sim; solution: Placement[] } | null {
@@ -430,11 +443,13 @@ export function generate(day: number, data: TheatreData): Generated {
 	}
 	// Last resort, every warhead free and no conditions, always solvable.
 	const rng = rngFor(day, 'fallback');
+	const field = fieldFor(day, data);
 	const s: Scenario = {
 		day,
 		date: dateOfDay(day),
 		theatre,
-		weather: rollWeather(rng),
+		weather: field ? field.at(theatre.lat, theatre.lon) : rollWeather(rng),
+		field,
 		arsenal: rollArsenal(rng, theatre, 'fatalities', day),
 		kind: 'fatalities',
 		goal: 0,

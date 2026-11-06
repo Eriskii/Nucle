@@ -169,7 +169,7 @@
 		<div class="masthead">
 			<b>{t.sheet.org[theme.id]}</b>
 			<p>{t.sheet.form[theme.id]}</p>
-			<p>{t.sheet.exercise} {String(scenario.day).padStart(3, '0')} · {scenario.date} · {theatreName}</p>
+			<p>{t.sheet.exercise} {String(scenario.day).padStart(3, '0')} · {scenario.field?.date ?? scenario.date} · {theatreName}</p>
 			<span class="stamp">{t.sheet.stamp[theme.id]}</span>
 		</div>
 		<p class="note">{t.modelNote}</p>

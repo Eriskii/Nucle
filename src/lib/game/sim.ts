@@ -1,3 +1,4 @@
+import type { WeatherField } from './weatherfield';
 import {
 	EARTH_KM,
 	empKm,
@@ -102,6 +103,7 @@ export function directFractions(psi: number, km: number, thermal: number, radiat
 export class Sim {
 	readonly grid: PopGrid;
 	readonly weather: Weather;
+	readonly field?: WeatherField;
 	readonly probes: Probe[];
 	private x: Float64Array;
 	private y: Float64Array;
@@ -117,7 +119,8 @@ export class Sim {
 	private touched: Int32Array;
 	private cache = new Map<string, BurstEffect>();
 
-	constructor(grid: PopGrid, weather: Weather, probes: Probe[], zone?: { lat: number; lon: number; km: number }) {
+	constructor(grid: PopGrid, weather: Weather, probes: Probe[], zone?: { lat: number; lon: number; km: number }, field?: WeatherField) {
+		this.field = field;
 		this.grid = grid;
 		this.weather = weather;
 		this.probes = probes;
@@ -159,8 +162,14 @@ export class Sim {
 		return e;
 	}
 
+	/** The weather a burst at this point feels. */
+	weatherAt(lat: number, lon: number): Weather {
+		return this.field ? this.field.at(lat, lon) : this.weather;
+	}
+
 	private compute(b: Burst): BurstEffect {
-		const { grid, weather } = this;
+		const { grid } = this;
+		const weather = this.weatherAt(b.lat, b.lon);
 		const psiAt = psiProfile(b.kt, b.hobM);
 		const thermal = thermalKm(b.kt, b.hobM, weather);
 		const radiation = radiationKm(b.kt, b.hobM, b.weapon.enhanced);
@@ -201,6 +210,8 @@ export class Sim {
 		const nz = Math.cos(latR);
 		const dirE = Math.sin(wind);
 		const dirN = Math.cos(wind);
+		// With real weather the plume bends with the wind it meets. Otherwise it runs straight.
+		const track = field && this.field ? this.field.track(b.lat, b.lon, field.downKm) : null;
 
 		// The corner of the plume's box, since cells are culled by distance from ground zero.
 		const plumeReach = field ? Math.hypot(Math.max(field.downKm, field.upKm), field.halfWidthKm) : 0;
@@ -237,8 +248,14 @@ export class Sim {
 			if (field) {
 				const east = (dx * ex + dy * ey) * EARTH_KM;
 				const north = (dx * nx + dy * ny + dz * nz) * EARTH_KM;
-				const down = east * dirE + north * dirN;
-				r = field.rateAt(down, north * dirE - east * dirN);
+				let down: number;
+				let cross: number;
+				if (track) [down, cross] = track.axes(east, north);
+				else {
+					down = east * dirE + north * dirN;
+					cross = north * dirE - east * dirN;
+				}
+				r = field.rateAt(down, cross);
 				if (r > 0) d = field.doseAt(r, down);
 			}
 			const em = km <= emp ? 1 : 0;
@@ -264,7 +281,7 @@ export class Sim {
 			if (field) {
 				const east = (dx * ex + dy * ey) * EARTH_KM;
 				const north = (dx * nx + dy * ny + dz * nz) * EARTH_KM;
-				probeRate[i] = field.rateAt(east * dirE + north * dirN, north * dirE - east * dirN);
+				probeRate[i] = field.rateAt(...((track ? track.axes(east, north) : [east * dirE + north * dirN, north * dirE - east * dirN]) as [number, number]));
 			}
 		});
 

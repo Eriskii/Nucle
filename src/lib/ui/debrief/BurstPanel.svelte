@@ -242,7 +242,7 @@
 		<section>
 			<h3>{W.sectionSide}</h3>
 			<p>{W.sideBody}</p>
-			{#key r.index}<SideView {r} {F} text={W.side} {precip} {grade} />{/key}
+			{#key r.index}<SideView {r} {F} text={W.side} precip={r.weather.precip} {grade} />{/key}
 		</section>
 
 		<section>
@@ -350,6 +350,7 @@
 			{#if rows.length}
 				<p>{W.falloutBody}</p>
 				<FalloutPlan {r} {F} labels={{ gz: W.gz, wind: W.wind, blast: W.blastRing, desc: W.falloutDesc }} />
+				{#if 'date' in r.weather}<p class="small">{W.falloutBent}</p>{/if}
 				<div class="scroll">
 					<table class="dt">
 						<thead>

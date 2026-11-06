@@ -55,8 +55,13 @@
 			];
 			const plume = b.falloutRows.find((f) => f.rate === 10)?.band.length ?? 0;
 			if (plume > 0) {
-				const a = (scenario.weather.windBearing * Math.PI) / 180;
+				const a = (b.weather.windBearing * Math.PI) / 180;
 				out.push([x + Math.sin(a) * plume, y + Math.cos(a) * plume]);
+				if (scenario.field && b.plumeKm > 0) {
+					// A bent plume can end somewhere else, so its tip and middle count toward the framing too.
+					const track = scenario.field.track(b.burst.lat, b.burst.lon, b.plumeKm);
+					for (const share of [0.5, 1]) out.push(proj.forward(...track.point(plume * share, 0)));
+				}
 			}
 			return out;
 		});
@@ -170,14 +175,15 @@
 				c.setLineDash([]);
 				const band = b.falloutRows.find((f) => f.rate === 10)?.band;
 				if (band && (mode === 'fallout' || mode === 'deaths')) {
-					const bearing = scenario.weather.windBearing;
+					const bearing = b.weather.windBearing;
+					const track = scenario.field && b.plumeKm > 0 ? scenario.field.track(b.burst.lat, b.burst.lon, b.plumeKm) : null;
 					c.beginPath();
 					for (const run of band.runs) {
 						const side = (sign: number, pts: [number, number][]) => {
 							pts.forEach(([along, half], i) => {
 								const [la, lo] = destination(b.burst.lat, b.burst.lon, bearing, Math.abs(along));
 								const start = along >= 0 ? [la, lo] : destination(b.burst.lat, b.burst.lon, bearing + 180, -along);
-								const [la2, lo2] = destination(start[0], start[1], bearing + 90 * sign, half);
+								const [la2, lo2] = track ? track.point(along, -sign * half) : destination(start[0], start[1], bearing + 90 * sign, half);
 								const [qx, qy] = proj.forward(la2, lo2);
 								const [sx, sy] = toPx(qx, qy);
 								if (i === 0 && sign > 0) c.moveTo(sx, sy);

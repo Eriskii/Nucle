@@ -33,6 +33,7 @@
 		rankFor,
 		SCORE_UNIT,
 		toBurst,
+		weatherFor,
 		type Outcome,
 		type Placement,
 		type Scenario
@@ -148,7 +149,7 @@
 
 	const selectedBurst = $derived(scenario && selectedPlacement ? toBurst(scenario, selectedPlacement) : null);
 	const selectedRings = $derived(
-		scenario && selectedBurst ? ringsFor(selectedBurst.weapon, selectedBurst.kt, selectedBurst.hobM, scenario.weather) : null
+		scenario && selectedBurst ? ringsFor(selectedBurst.weapon, selectedBurst.kt, selectedBurst.hobM, weatherFor(scenario, selectedBurst.lat, selectedBurst.lon)) : null
 	);
 
 	const ru = $derived(lang === 'ru');
@@ -381,7 +382,7 @@
 				</div>
 				<div class="serial card">
 					<span>{L.exercise} {pad(scenario.day)}{practice ? ` · ${L.archive}` : ''}</span>
-					<span>{scenario.date} · {theatreName}</span>
+					<span>{scenario.field?.date ?? scenario.date} · {theatreName}</span>
 				</div>
 				<div class="tally">
 					<span>{L.streak} {@render number(`${stats.streak}`, 3)}</span>
@@ -495,11 +496,12 @@
 								{#each conditions as c (c)}<li>{c}</li>{/each}
 							</ul>
 						{/if}
-						<p class="head">{L.weather}</p>
+						<p class="head">{L.weather}{scenario.field ? ` ${scenario.field.date}` : ''}</p>
 						<p>
 							{ru ? PRECIP_RU[scenario.weather.precip] : scenario.weather.precip}. {L.windToward}
 							{String(scenario.weather.windBearing).padStart(3, '0')}°{ru ? ',' : ` ${L.at}`}
 							{fmtWind(scenario.weather.windKmh, lang)}.
+							{#if scenario.field}{L.realWeather}{/if}
 						</p>
 
 						{#if lastRun && !final}
@@ -715,7 +717,7 @@
 						EFFECTS ARE SIMPLIFIED FROM PUBLIC FIGURES IN GLASSTONE &amp; DOLAN AND OTA 1979. POPULATION: GHS-POP R2023A, BUILT-UP:
 						GHS-BUILT-S R2023A, EUROPEAN COMMISSION JRC, CC BY 4.0. STRUCTURE COUNTS ARE ESTIMATED FROM BUILT AREA. MAPS: NATURAL
 						EARTH, STREETS AND BUILDINGS © OPENSTREETMAP CONTRIBUTORS VIA OPENFREEMAP AND OPENMAPTILES, STREAMED AS YOU ZOOM. THE
-						BOARD IS SIMULATED FROM THE COMMAND ESTIMATE, THERE IS NO SERVER.
+						BOARD IS SIMULATED FROM THE COMMAND ESTIMATE, THERE IS NO SERVER. WEATHER: OPEN-METEO.COM, ERA5 REANALYSIS, COPERNICUS, CC BY 4.0.
 					</p>
 				{/if}
 				<button class="key lit wide" onclick={closeOrders}>{L.acknowledge}</button>
@@ -1470,7 +1472,7 @@
 		font-size: 23px;
 	}
 	.slider small {
-		width: 40px;
+		width: 54px;
 		font: 12px var(--engraved);
 		letter-spacing: 0.04em;
 	}

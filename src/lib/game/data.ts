@@ -1,4 +1,5 @@
 import type { PopGrid } from './sim';
+import type { WeatherFile } from './weatherfield';
 
 export interface Place {
 	name: string;
@@ -33,6 +34,7 @@ export interface TheatreMeta {
 export interface TheatreData {
 	meta: TheatreMeta;
 	grid: PopGrid;
+	weather?: WeatherFile;
 }
 
 export function decodeGrid(meta: TheatreMeta, buf: ArrayBuffer): PopGrid {
@@ -65,11 +67,13 @@ export async function loadTheatre(
 	fetcher: typeof fetch,
 	urlFor: (file: string) => string
 ): Promise<TheatreData> {
-	const [metaRes, binRes] = await Promise.all([
+	const [metaRes, binRes, weatherRes] = await Promise.all([
 		fetcher(urlFor(`data/${id}.json`)),
-		fetcher(urlFor(`data/${id}.bin`))
+		fetcher(urlFor(`data/${id}.bin`)),
+		fetcher(urlFor(`data/weather-${id}.json`))
 	]);
-	if (!metaRes.ok || !binRes.ok) throw new Error(`could not load theatre ${id}`);
+	// Without its weather a puzzle would differ from everyone else's, so this is as fatal as the map being missing.
+	if (!metaRes.ok || !binRes.ok || !weatherRes.ok) throw new Error(`could not load theatre ${id}`);
 	const meta = (await metaRes.json()) as TheatreMeta;
-	return { meta, grid: decodeGrid(meta, await binRes.arrayBuffer()) };
+	return { meta, grid: decodeGrid(meta, await binRes.arrayBuffer()), weather: (await weatherRes.json()) as WeatherFile };
 }

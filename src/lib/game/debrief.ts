@@ -79,6 +79,10 @@ export interface FalloutRow {
 export interface BurstReport {
 	index: number;
 	burst: Burst;
+	/** The weather at this ground zero. */
+	weather: Weather;
+	/** Length of the plume's centre line, for drawing it along the winds it meets. */
+	plumeKm: number;
 	rings: Rings;
 	exo: boolean;
 	fissionShare: number;
@@ -270,7 +274,8 @@ const BIN_COUNT = 24;
 
 /** Blast, burn and radiation fractions by distance for one burst, averaged the way the simulation averages a cell. */
 function directTable(b: Burst, sim: Sim) {
-	const { grid, weather } = sim;
+	const { grid } = sim;
+	const weather = sim.weatherAt(b.lat, b.lon);
 	const psiAt = psiProfile(b.kt, b.hobM);
 	const thermal = thermalKm(b.kt, b.hobM, weather);
 	const radiation = radiationKm(b.kt, b.hobM, b.weapon.enhanced);
@@ -441,6 +446,7 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 		const alone = sim.tally([b]);
 		const without = sim.tally(others);
 		const exo = b.hobM >= EXO_HEIGHT_M;
+		const weather = sim.weatherAt(b.lat, b.lon);
 		const rings = ringsFor(b.weapon, b.kt, b.hobM, weather);
 		const fission = fissionFractionAt(b.weapon, b.kt);
 		const fire = fireballKm(b.kt, b.hobM);
@@ -544,6 +550,8 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 		return {
 			index,
 			burst: b,
+			weather,
+			plumeKm: field?.downKm ?? 0,
 			rings,
 			exo,
 			fissionShare: fission,
@@ -630,8 +638,16 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 	// under 8 mph of surface wind and at least half a square mile. See docs/CALCULATIONS.md for how each is read here.
 	const prompt = new Float32Array(n);
 	const inBurns = new Uint8Array(n);
+	const fireCapable: BurstReport[] = [];
+	let calm = false;
+	let dry = false;
 	for (const r of reports) {
 		if (r.rings.thermal <= 0) continue;
+		const isDry = r.weather.precip !== 'RAIN' && r.weather.precip !== 'SNOW';
+		dry ||= isDry;
+		calm ||= isDry && r.weather.windKmh <= FIRE_WIND_KMH;
+		// Bursts in rain, snow or a strong wind still burn people, but light no firestorm.
+		if (isDry && r.weather.windKmh <= FIRE_WIND_KMH) fireCapable.push(r);
 		for (let i = 0; i < n; i++) {
 			if (Math.abs(grid.lat[i] - r.burst.lat) * 111.2 > r.rings.thermal) continue;
 			if (distanceKm(grid.lat[i], grid.lon[i], r.burst.lat, r.burst.lon) <= r.rings.thermal) inBurns[i] = 1;
@@ -648,15 +664,19 @@ export function analyze(s: Scenario, sim: Sim, outcome: Outcome, meta: TheatreMe
 		}
 	}
 	const cellArea = grid.cellKm * grid.cellKm;
-	const dense = (i: number) => inBurns[i] === 1 && grid.structures[i] / cellArea >= FIRE_STRUCTURES_KM2;
-	let denseArea = 0;
-	let anyBurn = false;
-	for (let i = 0; i < n; i++) {
-		if (inBurns[i]) anyBurn = true;
-		if (dense(i)) denseArea += cellArea;
+	// A fire takes its weather from the burst that lit it.
+	const dense = (i: number) => fireLit[i] === 1 && grid.structures[i] / cellArea >= FIRE_STRUCTURES_KM2;
+	const anyBurn = inBurns.includes(1);
+	const fireLit = new Uint8Array(n);
+	for (const r of fireCapable) {
+		for (let i = 0; i < n; i++) {
+			if (Math.abs(grid.lat[i] - r.burst.lat) * 111.2 > r.rings.thermal) continue;
+			if (distanceKm(grid.lat[i], grid.lon[i], r.burst.lat, r.burst.lon) <= r.rings.thermal) fireLit[i] = 1;
+		}
 	}
-	const wet = weather.precip === 'RAIN' || weather.precip === 'SNOW';
-	const fireState: Firestorm['state'] = !anyBurn ? 'none' : wet ? 'wet' : weather.windKmh > FIRE_WIND_KMH ? 'wind' : denseArea < FIRE_MIN_KM2 ? 'fuel' : 'burning';
+	let denseArea = 0;
+	for (let i = 0; i < n; i++) if (dense(i)) denseArea += cellArea;
+	const fireState: Firestorm['state'] = !anyBurn ? 'none' : !dry ? 'wet' : !calm ? 'wind' : denseArea < FIRE_MIN_KM2 ? 'fuel' : 'burning';
 	const firestorm: Firestorm = { state: fireState, areaKm2: fireState === 'burning' ? denseArea : 0, deaths: 0, structures: 0 };
 	let cancers = 0;
 	const injuries: Injuries = { blast: 0, burns: 0, sickness: 0, total: 0 };
@@ -800,9 +820,11 @@ function placeRows(s: Scenario, sim: Sim, bursts: Burst[], meta: TheatreMeta, ce
 			const km = distanceKm(lat, lon, b.lat, b.lon);
 			nearestKm = Math.min(nearestKm, km);
 			peakPsi = Math.max(peakPsi, psiProfile(b.kt, b.hobM)(km));
-			const field = falloutField(b.weapon, b.kt, b.hobM, weather);
+			const local = sim.weatherAt(b.lat, b.lon);
+			const field = falloutField(b.weapon, b.kt, b.hobM, local);
 			if (field) {
-				const [down, cross] = plumeAxes(b, lat, lon, weather.windBearing);
+				const [east, north] = plumeAxes(b, lat, lon, 90);
+				const [down, cross] = sim.field ? sim.field.track(b.lat, b.lon, field.downKm).axes(east, north) : plumeAxes(b, lat, lon, local.windBearing);
 				rate += field.rateAt(down, cross);
 			}
 		}

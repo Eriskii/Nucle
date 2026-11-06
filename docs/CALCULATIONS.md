@@ -72,6 +72,10 @@ Each value is averaged over four points across a cell's width, so the score chan
 
 **Heights.** At or above 30 km there is no prompt radiation or fallout, and blast is the small estimate described below. EMP applies, and heat can still reach the ground: X-rays and neutrons stop in thin air and heat it, and the hot air radiates down. Above 30 km the point source hands over to a single layer at 80 km that sends 20% of the yield toward the ground (both **estimates**). Burns from this need yields around 1 Gt: Starfish Prime gets 0.01 cal/cm², and 50 Mt at 100 km gets about 9, under the burn threshold.
 
+## Weather
+
+From puzzle 3, weather is real and varies across the map: see "Real weather" in `EFFECTS.md`. Fallout direction and drift, rainout, heat through air and cloud, firestorms, and the side view's rising air all use the weather at each burst's own ground zero. Puzzles 1 and 2 keep one rolled weather for the whole map.
+
 ## Fallout
 
 Each burst lays a continuous dose-rate field (Miller's scaling system) along the wind's bearing:

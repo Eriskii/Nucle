@@ -1,3 +1,4 @@
+import type { WeatherField } from './weatherfield';
 import { optimumHobM, type Weather } from './effects';
 import { fmtPressure, fmtRate, placeName, type Lang } from './i18n';
 import { distanceKm, type Burst, type Probe, type Sim, type Tally } from './sim';
@@ -30,11 +31,16 @@ export interface Zone {
 	ru?: string;
 }
 
+export const weatherFor = (s: Pick<Scenario, 'weather' | 'field'>, lat: number, lon: number): Weather => (s.field ? s.field.at(lat, lon) : s.weather);
+
 export interface Scenario {
 	day: number;
 	date: string;
 	theatre: Theatre;
+	/** At the map's centre. Use weatherFor to get it at a point. */
 	weather: Weather;
+	/** Real weather that varies across the map, on puzzles that have it. */
+	field?: WeatherField;
 	/** One entry per warhead. */
 	arsenal: Weapon[];
 	kind: ObjectiveKind;

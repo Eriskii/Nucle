@@ -1,20 +1,24 @@
 import type { BurstReport } from '#lib/game/debrief.ts';
 import { cloudRise, dustDown, fallenKm } from '#lib/game/cloudrise.ts';
 import { psiProfile, type Precip } from '#lib/game/effects.ts';
+import type { LocalWeather } from '#lib/game/weatherfield.ts';
 import type { SceneState } from './blastEngine.ts';
 
 // Maps a moment to what the scene shows. Blast ranges come from the effects model. The rising air and settling dust come
 // from cloudrise.ts, and the colour from reddish brown to white follows §2.08. Fires, the skyline and how the billows
 // look are illustrative.
 
-/** Relative humidity near the ground for each kind of weather. The game has no humidity of its own, so these are estimates. */
+/** For puzzles from before real weather: relative humidity near the ground for each kind of weather, an estimate. */
 export const HUMIDITY: Record<Precip, number> = { CLEAR: 0.45, HAZE: 0.65, OVERCAST: 0.8, RAIN: 0.95, SNOW: 0.85 };
 
 /** The rising air for this burst. It starts once the fireball has stopped growing fast. */
-export const riseOf = (r: BurstReport, precip: Precip = 'CLEAR') => cloudRise(r.burst.kt, r.burst.hobM, r.thermalMaxS * 5, HUMIDITY[precip]);
+const humidityOf = (r: BurstReport) => (r.weather as LocalWeather).humidity ?? HUMIDITY[r.weather.precip];
+const groundOf = (r: BurstReport) => (r.weather as LocalWeather).tempC ?? 15;
+
+export const riseOf = (r: BurstReport) => cloudRise(r.burst.kt, r.burst.hobM, r.thermalMaxS * 5, humidityOf(r), groundOf(r));
 
 /** How much height the air's moisture added, in km. */
-export const moistureLiftKm = (r: BurstReport, precip: Precip) => riseOf(r, precip).topKm - cloudRise(r.burst.kt, r.burst.hobM, r.thermalMaxS * 5, 0).topKm;
+export const moistureLiftKm = (r: BurstReport) => riseOf(r).topKm - cloudRise(r.burst.kt, r.burst.hobM, r.thermalMaxS * 5, 0, groundOf(r)).topKm;
 
 export function shockGroundKm(r: BurstReport, t: number): number {
 	const s = r.shock;
@@ -56,13 +60,13 @@ export interface Moment {
 	water: number;
 }
 
-export function momentAt(r: BurstReport, t: number, precip: Precip = 'CLEAR'): Moment {
+export function momentAt(r: BurstReport, t: number): Moment {
 	const hob = r.burst.hobM / 1000;
 	const after = Math.max(t, 0);
 	const tMax = r.thermalMaxS;
 	const tForm = tMax * 10;
 	// A fireball stays centred on the burst while it grows. It only starts to climb once it has stopped growing fast.
-	const air = riseOf(r, precip);
+	const air = riseOf(r);
 	const p = air.at(after);
 	const start = tForm * 0.5;
 	const lift = Math.min(1, Math.max(0, after - start) / Math.max(start, 0.1));
@@ -131,7 +135,8 @@ export interface Trail {
 const NO_TRAIL: Trail = { kind: 0, head: [0, 0], tail: [0, 0], width: 0 };
 
 export function sceneFor(r: BurstReport, t: number, churn: number, view: SceneView, precip: Precip, grade: number, trail: Trail = NO_TRAIL): SceneState {
-	const m = momentAt(r, t, precip);
+	const m = momentAt(r, t);
+	const damp = humidityOf(r);
 	const hob = r.burst.hobM / 1000;
 	const after = Math.max(t, 0);
 	const tForm = r.thermalMaxS * 10;
@@ -144,7 +149,7 @@ export function sceneFor(r: BurstReport, t: number, churn: number, view: SceneVi
 	// The cap glows only while it's far hotter than the air, which mixing ends quickly.
 	const heat = lit ? Math.min(1, Math.max(0, m.dT) / 350) : 0;
 	// A cap of ice forms over the top in moist air when it's climbing fast through the height of the clouds.
-	const pileus = lit ? Math.min(1, m.w / 50) * Math.exp(-Math.pow((m.capAlt + m.capH - 9) / 7, 2)) * Math.min(1, HUMIDITY[precip] / 0.7) : 0;
+	const pileus = lit ? Math.min(1, m.w / 50) * Math.exp(-Math.pow((m.capAlt + m.capH - 9) / 7, 2)) * Math.min(1, damp / 0.7) : 0;
 
 	// The light on the whole scene follows the pulse, but a gigaton's lasts minutes, and that would hide everything.
 	const flashS = Math.min(r.thermalMaxS, 1.5);
@@ -155,7 +160,7 @@ export function sceneFor(r: BurstReport, t: number, churn: number, view: SceneVi
 	// G&D §2.50: at about 20 kt it began at 1 to 2 s and was gone within about another second. Scaled by cube root.
 	const wTime = Math.cbrt(r.burst.kt / 21);
 	// It needs moist air, so it's faint on a dry day.
-	const wilson = lit ? Math.exp(-Math.pow((after - 1.6 * wTime) / (0.7 * wTime), 2)) * 0.9 * Math.min(1, Math.max(0.15, (HUMIDITY[precip] - 0.35) / 0.45)) : 0;
+	const wilson = lit ? Math.exp(-Math.pow((after - 1.6 * wTime) / (0.7 * wTime), 2)) * 0.9 * Math.min(1, Math.max(0.15, (damp - 0.35) / 0.45)) : 0;
 
 	const dustReach = Math.min(m.shockKm, r.rings.psi1 * 0.8);
 	const dustHeight = Math.max(r.rings.psi5 * 0.2, 0.02) * Math.pow(Math.min(1, after / (r.shock[r.shock.length - 1]?.s ?? 60) + 0.25), 0.5);

@@ -7,9 +7,11 @@
 		totalKt: number;
 		windBearing: number;
 		windKmh: number;
+		/** Share of saturation at this spot, on puzzles with real weather. */
+		humidity: number | null;
 	}
 
-	let { lang, totalKt, windBearing, windKmh }: Props = $props();
+	let { lang, totalKt, windBearing, windKmh, humidity }: Props = $props();
 
 	const ru = $derived(lang === 'ru');
 
@@ -68,8 +70,8 @@
 	</g>
 	<circle cx="48" cy="48" r="4" class="hub" />
 	<path d="M16 34a34 34 0 0 1 64 0c-20-8-44-8-64 0z" class="gloss" />
-	<rect x="18" y="96" width="60" height="15" rx="2" class="well" />
-	<text x="48" y="107" text-anchor="middle" class="well-text">{fmtWind(windKmh, lang)}</text>
+	<rect x="6" y="96" width="84" height="15" rx="2" class="well" />
+	<text x="48" y="107" text-anchor="middle" class="well-text">{fmtWind(windKmh, lang)}{humidity === null ? '' : ` ${Math.round(humidity * 100)}%`}</text>
 </svg>
 
 <style>

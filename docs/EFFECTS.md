@@ -151,6 +151,16 @@ Blast, heat and fallout at Gnomon and Sundial yields are extrapolations from fit
 
 A what-if, not a real weapon. Grams (*Journal of Cold War Studies* 23:2, 2021) reports Housatonic at 9.96 Mt, 7,139 lb, an estimated 99.9% clean, a 1962 request for maximum yield in about 6,000 lb for the Titan II, and a predicted 30 to 40 Mt for the fully fuelled device. The game uses 35 Mt at a 0.1% fission share. The size drawn is the Titan II's reentry vehicle. Its shape is a guess.
 
+## Real weather
+
+From puzzle 3, each puzzle takes a real date from 1950 to 1991, fixed per puzzle, and uses the weather recorded at a set of points across its map at local noon (`weatherfield.ts`). The data is ERA5 reanalysis through Open-Meteo, downloaded once by `scripts/build-weather.ts` into `static/data`, so a puzzle is the same for everyone and works offline. Each map has 8 dates, one per eighth of the year. 1950s reanalysis rests on far fewer observations, so older dates are less certain.
+
+- **Stations.** 9 points on a city map, 21 on a region, 53 on the hemisphere. A point's wind, humidity and temperature blend the nearest four by inverse distance squared. Rain, snow and cloud come from the nearest one.
+- **Per burst.** Each burst's fallout strength, heat and firestorm chance use the weather at its own ground zero.
+- **Bending.** Each plume's centre line follows the winds it passes through (`plumetrack.ts`), and the contours are laid along that curve. Only direction bends. Strength, width and arrival times along the line still come from Miller's pattern for the wind at ground zero, so a plume doesn't speed up, slow or rain out as it crosses into other weather. The turn per step is limited, an estimate, and the wind used is the low-level one, not the changing winds at the cloud's height. The first and last stretches run straight on past the line's ends.
+- **Wind.** The source's 100 m wind is multiplied by 1.5 to stand for the lowest few km, with a floor of 5 km/h. That's an estimate, because upper-air winds aren't in this source. `WIND_PROFILE` then applies as before.
+- **Kinds of weather.** WMO weather codes map to SNOW and RAIN. Fog, or humidity of 85% or more under thin cloud, is HAZE. Cloud cover of 70% or more is OVERCAST.
+
 ## Rising air and dust
 
 The side view's cloud (`cloudrise.ts`) isn't a curve fit. It follows a buoyant thermal after Morton, Taylor & Turner (1956): mass, momentum, heat and water of a hot blob that mixes in surrounding air as it climbs through a US Standard Atmosphere 1976. Where it stops, it flattens as a gravity current. Dust falls at terminal speeds from drag on each grain size (Schiller-Naumann), with viscosity from Sutherland's law.
@@ -165,7 +175,7 @@ Two numbers are fitted: 35% of the yield stays as heat in the rising air, and th
 | Castle Bravo, 15 Mt | 41 km | about 40 km |
 | Tsar Bomba, 50 Mt | 68 km | about 65 km |
 
-**Moisture.** Entrained vapour condenses past saturation (Magnus formula) and releases latent heat, with the extra for ice below freezing. Vapour and condensed water count in the density, and water above 3 g/kg falls out. Air dries to almost nothing above the tropopause. The table above is for dry air. Moisture barely moves megaton clouds (1 Mt: 21.7 to 22.2 km at 95% humidity) and dominates tiny ones (18 t: 1.7 to 3.6 km). The game's weather carries no humidity, so CLEAR 45%, HAZE 65%, OVERCAST 80%, RAIN 95% and SNOW 85% are estimates. All air is taken at standard temperature, so these don't vary with climate.
+**Moisture.** Entrained vapour condenses past saturation (Magnus formula) and releases latent heat, with the extra for ice below freezing. Vapour and condensed water count in the density, and water above 3 g/kg falls out. Air dries to almost nothing above the tropopause. The table above is for dry air. Moisture barely moves megaton clouds (1 Mt: 21.7 to 22.2 km at 95% humidity) and dominates tiny ones (18 t: 1.7 to 3.6 km). Humidity and ground temperature come from the real weather at each ground zero. Above the ground the day's warmth or chill fades out by the tropopause, an estimate. Puzzles 1 and 2 predate real weather and use CLEAR 45%, HAZE 65%, OVERCAST 80%, RAIN 95% and SNOW 85%.
 
 **Limits.** No wind shear, and no radiative cooling. A 1 Gt thermal is larger than the atmosphere's scale height, so the model stops applying: it's held at 90 km and flagged. Spreading speed and the minimum thickness are estimates. The grain size split is an estimate.
 

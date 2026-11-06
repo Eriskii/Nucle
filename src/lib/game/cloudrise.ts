@@ -17,6 +17,8 @@ const START_K = 3000;
 const J_PER_KT = 4.184e12;
 const ADDED_MASS = 0.5;
 const CEILING_M = 90000;
+const STANDARD_GROUND_C = 15;
+const TROPOPAUSE_M = 11000;
 const MAX_BREACH_M = 30000;
 
 // US Standard Atmosphere 1976: base height in m, base temperature in K, lapse rate in K/m.
@@ -107,18 +109,25 @@ export interface CloudRise {
 const cache = new Map<string, CloudRise>();
 
 /** Follows the rising air for an hour from when it starts to rise. `startS` is when the fireball has stopped growing fast. */
-export function cloudRise(kt: number, hobM: number, startS: number, humidity = 0): CloudRise {
-	const key = `${kt}|${hobM}|${startS.toFixed(4)}|${humidity}`;
+export function cloudRise(kt: number, hobM: number, startS: number, humidity = 0, groundC = STANDARD_GROUND_C): CloudRise {
+	const key = `${kt}|${hobM}|${startS.toFixed(4)}|${humidity}|${groundC}`;
+	// The day's warmth or chill at the ground, fading out by the tropopause. Warm air holds far more water.
+	const anomaly = groundC - STANDARD_GROUND_C;
+	const env = (height: number) => {
+		const a = air(height);
+		const T = a.T + anomaly * Math.max(0, 1 - Math.max(0, height) / TROPOPAUSE_M);
+		return { ...a, T, rho: a.p / (R_AIR * T) };
+	};
 	const hit = cache.get(key);
 	if (hit) return hit;
 
 	const E = BUOYANT_SHARE * kt * J_PER_KT;
-	const start = air(hobM);
+	const start = env(hobM);
 	const V0 = E / ((CP / R_AIR) * start.p * (1 - start.T / START_K));
 	let b = Math.cbrt((3 * V0) / (4 * Math.PI));
 	// A burst on the ground starts as a hemisphere, so its centre is already off the ground.
 	let z = Math.max(hobM, b * 0.6);
-	let m = (air(z).p / (R_AIR * START_K)) * V0;
+	let m = (env(z).p / (R_AIR * START_K)) * V0;
 	let T = START_K;
 	let w = 0;
 	let t = 0;
@@ -127,12 +136,12 @@ export function cloudRise(kt: number, hobM: number, startS: number, humidity = 0
 	let dt = 0.02;
 	let breached = false;
 	const points: CloudPoint[] = [];
-	const push = (r: number, h: number, spreading: boolean) => points.push({ t: startS + t, z: z / 1000, r: r / 1000, h: h / 1000, w, dT: T - air(z).T, water: liquid * 1000, spreading });
+	const push = (r: number, h: number, spreading: boolean) => points.push({ t: startS + t, z: z / 1000, r: r / 1000, h: h / 1000, w, dT: T - env(z).T, water: liquid * 1000, spreading });
 	push(b, b, false);
 
 	// Rising: mass, momentum and heat of the thermal, with cooling as it expands and as cold air mixes in.
 	while (t < 3600) {
-		const a = air(z);
+		const a = env(z);
 		// Density counts water vapour, which is lighter than air, and condensed water, which weighs the cloud down.
 		const outside = ambientVapour(z, a.T, a.p, humidity);
 		const rhoOut = a.p / (R_AIR * a.T * (1 + 0.608 * outside));
@@ -152,8 +161,7 @@ export function cloudRise(kt: number, hobM: number, startS: number, humidity = 0
 		vapour += (outside - vapour) * mix;
 		liquid -= liquid * mix;
 		// Vapour past saturation condenses and heats the air. Cloud water in air gone too dry evaporates and cools it.
-		const here = air(z);
-		const sat = saturation(T, here.p);
+		const sat = saturation(T, env(z).p);
 		const L = latent(T);
 		const change = (vapour - sat) / (1 + (L * L * sat) / (CP * R_VAPOUR * T * T));
 		const condense = change > 0 ? change : Math.max(change, -liquid);

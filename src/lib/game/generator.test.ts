@@ -32,7 +32,7 @@ function load(id: string): TheatreData {
 		const meta = JSON.parse(readFileSync(`static/data/${id}.json`, 'utf8')) as TheatreMeta;
 		const raw = readFileSync(`static/data/${id}.bin`);
 		const buf = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer;
-		d = { meta, grid: decodeGrid(meta, buf) };
+		d = { meta, grid: decodeGrid(meta, buf), weather: JSON.parse(readFileSync(`static/data/weather-${id}.json`, 'utf8')) };
 		cache.set(id, d);
 	}
 	return d;

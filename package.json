@@ -15,7 +15,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest run --environment node",
-		"data": "node scripts/build-data.ts"
+		"data": "node scripts/build-data.ts",
+		"weather": "node scripts/build-weather.ts"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^4.0.1",
