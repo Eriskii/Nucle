@@ -327,14 +327,14 @@
 			ctx.strokeStyle = theme.runway;
 			ctx.lineWidth = road(1.3, 20);
 			ctx.stroke(t.runways);
-			// Road hierarchy tightens with distance: from afar only highways stand out,
-			// and streets read as a fine texture until they have room to be lines.
-			ctx.globalAlpha = 0.05 + 0.95 * near * near * near;
-			casedRoad(t.roads.service, theme.roadService, 0.4 + 0.5 * near, 6);
+			// Only motorways and trunk roads stand out, at any zoom. Streets stay a faint texture even up close.
+			ctx.globalAlpha = 0.03 + 0.22 * near * near * near;
+			casedRoad(t.roads.service, theme.roadService, 0.35 + 0.25 * near, 6);
 			ctx.globalAlpha = 1;
-			casedRoad(t.roads.minor, `rgba(${theme.roadRgb}, ${0.1 + 0.75 * near * near * near})`, 0.5 + 0.5 * near, 10);
-			casedRoad(t.roads.mid, `rgba(${theme.roadRgb}, ${0.24 + 0.71 * near * near})`, 0.7 + 0.6 * near, 16);
-			casedRoad(t.roads.major, `rgba(${theme.roadRgb}, ${0.5 + 0.5 * near})`, 0.9 + 0.9 * near, 26);
+			casedRoad(t.roads.minor, `rgba(${theme.roadRgb}, ${0.05 + 0.25 * near * near * near})`, 0.4 + 0.3 * near, 10);
+			casedRoad(t.roads.mid, `rgba(${theme.roadRgb}, ${0.14 + 0.36 * near * near})`, 0.6 + 0.4 * near, 16);
+			// From afar there are a lot of these too, so they come up to full strength only as you zoom in.
+			casedRoad(t.roads.major, `rgba(${theme.roadRgb}, ${0.42 + 0.58 * near * near})`, 0.75 + 1.35 * near * near, 26);
 			ctx.strokeStyle = theme.rail;
 			ctx.lineWidth = px(1.1);
 			ctx.setLineDash([px(5), px(3)]);
@@ -519,7 +519,7 @@
 			ctx.setTransform(1, 0, 0, 1, 0, 0);
 			ctx.globalCompositeOperation = 'lighter';
 			ctx.filter = `blur(${2.2 * ratio}px)`;
-			ctx.globalAlpha = 0.32;
+			ctx.globalAlpha = 0.16;
 			ctx.drawImage(copy, 0, 0);
 			ctx.restore();
 		}
